@@ -291,3 +291,69 @@ If local ONNX inference proves too complex, NVIDIA Riva provides production-read
 - Community-maintained ONNX exports for NVIDIA models
 - No external service dependencies
 - Cross-platform (.NET 8 on Windows/Linux)
+
+---
+
+# ASR Service Implementation
+
+**Author:** Parker (Integration Dev)  
+**Date:** 2026-02-11  
+**Status:** Implemented
+
+## Summary
+
+Implemented `AsrService.cs` with ONNX Runtime for Parakeet-TDT or compatible ASR models. The service includes:
+
+1. **Lazy loading** — Models load on first transcription request
+2. **GPU/CPU fallback** — Tries CUDA first, falls back to CPU if unavailable
+3. **Mock mode** — Returns mock transcripts when no ONNX model is found
+4. **Mel-spectrogram preprocessing** — Pure C# implementation matching Parakeet requirements
+
+## Files Created
+
+- `src/NvidiaVoiceAgent/Services/AsrService.cs` — Main ASR service implementation
+- `src/NvidiaVoiceAgent/Services/MelSpectrogramExtractor.cs` — Audio feature extraction
+
+## Files Modified
+
+- `src/NvidiaVoiceAgent/NvidiaVoiceAgent.csproj` — Added `Microsoft.ML.OnnxRuntime.Gpu`
+- `src/NvidiaVoiceAgent/Program.cs` — Registered `AsrService` in DI, updated health check
+
+## Model Discovery
+
+The service looks for ONNX models in the configured path (`ModelConfig.AsrModelPath`, defaults to `models/parakeet-tdt-0.6b`). It tries these filenames:
+- `encoder.onnx`
+- `model.onnx`
+- `parakeet.onnx`
+- `asr.onnx`
+- Any `.onnx` file in subdirectories
+
+## Preprocessing Pipeline
+
+Audio input → Mel spectrogram extraction:
+- 80 mel bins
+- 25ms window (400 samples at 16kHz)
+- 10ms hop (160 samples at 16kHz)
+- Hann windowing
+- Log-mel normalization
+
+## Known Limitations
+
+1. **No streaming support** — Processes complete audio chunks
+2. **CTC decoding only** — Uses greedy CTC decode; no beam search
+3. **Vocabulary loading** — Looks for `vocab.txt` but falls back to character-level decode
+4. **Model input flexibility** — Auto-detects input names from ONNX metadata
+
+## Getting Models
+
+Download Parakeet-TDT ONNX from HuggingFace:
+- `onnx-community/parakeet-tdt-0.6b-v2-ONNX`
+- `istupakov/parakeet-tdt-0.6b-v2-onnx`
+
+Place in `models/parakeet-tdt-0.6b/` directory.
+
+## Memory Requirements
+
+- GPU (CUDA): ~2-4GB VRAM
+- CPU: ~4GB system RAM
+- Model size: ~1.2GB on disk

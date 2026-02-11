@@ -22,3 +22,21 @@ C# options for model inference:
 ## Learnings
 
 <!-- Append new learnings below. Each entry is something lasting about the project. -->
+
+### 2026-02-11: ASR Service Implementation
+
+**Implemented:** `AsrService.cs` with ONNX Runtime inference + `MelSpectrogramExtractor.cs` for audio preprocessing.
+
+**Key decisions:**
+- Used pure C# FFT implementation to avoid external signal processing dependencies
+- `SessionOptions` conflicts with ASP.NET Core — must use fully qualified `Microsoft.ML.OnnxRuntime.SessionOptions`
+- Mel spectrogram config: 80 bins, 512 FFT, 400 window, 160 hop (matches Parakeet)
+- Greedy CTC decoding without beam search (simpler, works for most cases)
+
+**Model paths:** Default is `models/parakeet-tdt-0.6b/`. Service auto-discovers `encoder.onnx`, `model.onnx`, or any `.onnx` file.
+
+**Mock mode:** When no model found, returns mock transcripts and logs warning. Lets app run during development without large model files.
+
+**GPU fallback:** CUDA provider tried first, catches exception and falls back to CPU if unavailable. Added `Microsoft.ML.OnnxRuntime.Gpu` package for CUDA support.
+
+**ONNX input flexibility:** Auto-detects input tensor names from model metadata rather than hardcoding — different Parakeet exports may have different names.
