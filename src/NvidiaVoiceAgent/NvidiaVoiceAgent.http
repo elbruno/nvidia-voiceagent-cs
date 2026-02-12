@@ -1,0 +1,6 @@
+@NvidiaVoiceAgent_HostAddress = http://localhost:5003
+
+GET {{NvidiaVoiceAgent_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NvidiaVoiceAgent/NvidiaVoiceAgent.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NvidiaVoiceAgent.Tests/NvidiaVoiceAgent.Tests.csproj" />
+  </Folder>
+</Solution>
