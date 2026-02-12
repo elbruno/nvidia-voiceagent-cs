@@ -6,7 +6,7 @@ A production-ready, real-time voice agent built with **ASP.NET Core 10** that pe
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
-[![Tests](https://img.shields.io/badge/tests-37%20passed-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
+[![Tests](https://img.shields.io/badge/tests-67%20passed-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
 
 ## ✨ Features
 
@@ -17,6 +17,7 @@ A production-ready, real-time voice agent built with **ASP.NET Core 10** that pe
 - 📱 **Browser UI** - Modern, responsive web interface
 - 🔄 **Smart & Echo Modes** - Toggle between AI-powered responses and echo mode
 - 📊 **Real-time Logging** - Live log streaming via WebSocket
+- 📥 **Automatic Model Download** - Downloads ONNX models from HuggingFace on first run
 - 🎭 **Mock Mode** - Graceful development fallback when models are unavailable
 - 🚀 **GPU Acceleration** - CUDA support with automatic CPU fallback
 - 💪 **Production Ready** - Comprehensive error handling and resource management
@@ -103,7 +104,7 @@ dotnet test --logger "console;verbosity=detailed"
 dotnet test /p:CollectCoverage=true
 ```
 
-**Test Results:** 37 tests passed ✅
+**Test Results:** 67 tests passed ✅ (37 web + 30 ModelHub)
 
 ## ⚙️ Configuration
 
@@ -138,6 +139,36 @@ dotnet test /p:CollectCoverage=true
 | `LlmModelPath` | Path to LLM ONNX model | `models/phi-3-mini-4k-instruct` |
 | `UseGpu` | Enable GPU acceleration (requires CUDA) | `true` |
 | `Use4BitQuantization` | Enable 4-bit quantization for LLM | `true` |
+
+### ModelHub Configuration (Automatic Model Download)
+
+The application automatically downloads required ONNX models from HuggingFace on first run using the ModelHub library.
+
+```json
+{
+  "ModelHub": {
+    "AutoDownload": true,
+    "UseInt8Quantization": true,
+    "ModelCachePath": "model-cache",
+    "HuggingFaceToken": null
+  }
+}
+```
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `AutoDownload` | Automatically download missing models on startup | `true` |
+| `UseInt8Quantization` | Prefer INT8 quantized models (smaller/faster) | `true` |
+| `ModelCachePath` | Local directory for caching downloaded models | `model-cache` |
+| `HuggingFaceToken` | HuggingFace API token for gated models (optional) | `null` |
+
+**First Run Behavior:**
+
+1. Application checks for required models in the configured cache path
+2. If models are missing and `AutoDownload` is `true`, downloads from HuggingFace
+3. Download progress is displayed in console logs and broadcast to WebSocket clients
+4. Subsequent runs use cached models (no re-download)
+5. If downloads fail, the application falls back to Mock Mode
 
 ### Environment Variables
 
@@ -251,37 +282,69 @@ export Logging__LogLevel__Default="Debug"
 
 ```
 nvidia-voiceagent-cs/
-├── NvidiaVoiceAgent/
-│   ├── Hubs/                        # WebSocket handlers
-│   │   ├── VoiceWebSocketHandler.cs # Voice processing pipeline
-│   │   └── LogsWebSocketHandler.cs  # Log streaming
-│   ├── Services/                    # Core business logic
-│   │   ├── AsrService.cs           # Speech-to-text (ONNX)
-│   │   ├── AudioProcessor.cs       # WAV codec, resampling
-│   │   ├── MelSpectrogramExtractor.cs # Audio feature extraction
-│   │   ├── LogBroadcaster.cs       # Multi-client log distribution
-│   │   ├── IAsrService.cs          # ASR interface
-│   │   ├── ITtsService.cs          # TTS interface (TODO)
-│   │   └── ILlmService.cs          # LLM interface (TODO)
-│   ├── Models/                      # DTOs and configuration
-│   │   └── VoiceModels.cs          # Request/response models
-│   ├── wwwroot/                     # Static web UI
-│   │   ├── index.html
-│   │   ├── style.css
-│   │   └── app.js
-│   ├── Program.cs                   # Application entry point
-│   ├── appsettings.json            # Configuration
-│   └── NvidiaVoiceAgent.csproj     # Project file
+├── NvidiaVoiceAgent/                          # ASP.NET Core Web App
+│   ├── Hubs/                                  # WebSocket handlers
+│   │   ├── VoiceWebSocketHandler.cs           # Voice processing pipeline
+│   │   └── LogsWebSocketHandler.cs            # Log streaming
+│   ├── Services/                              # Core business logic
+│   │   ├── AsrService.cs                      # Speech-to-text (ONNX)
+│   │   ├── AudioProcessor.cs                  # WAV codec, resampling
+│   │   ├── MelSpectrogramExtractor.cs         # Audio feature extraction
+│   │   ├── LogBroadcaster.cs                  # Multi-client log distribution
+│   │   ├── WebProgressReporter.cs             # Download progress → WebSocket
+│   │   ├── IAsrService.cs                     # ASR interface
+│   │   ├── IAudioProcessor.cs                 # Audio processor interface
+│   │   ├── ILogBroadcaster.cs                 # Log broadcaster interface
+│   │   ├── ITtsService.cs                     # TTS interface (TODO)
+│   │   └── ILlmService.cs                     # LLM interface (TODO)
+│   ├── Models/                                # DTOs and configuration (one class per file)
+│   │   ├── ModelConfig.cs                     # AI model paths configuration
+│   │   ├── VoiceSessionState.cs               # WebSocket session state
+│   │   ├── ChatMessage.cs                     # Chat history message
+│   │   ├── ConfigMessage.cs                   # Client config message
+│   │   ├── TranscriptResponse.cs              # Transcript response DTO
+│   │   ├── ThinkingResponse.cs                # Thinking indicator DTO
+│   │   ├── VoiceResponse.cs                   # Full voice response DTO
+│   │   ├── VoiceMode.cs                       # Mode enum (Echo/Smart)
+│   │   ├── VoiceMessage.cs                    # Voice command message
+│   │   ├── LogEntry.cs                        # Log entry DTO
+│   │   └── HealthStatus.cs                    # Health check response
+│   ├── wwwroot/                               # Static web UI
+│   ├── Program.cs                             # DI configuration and routing
+│   ├── appsettings.json                       # Configuration
+│   └── NvidiaVoiceAgent.csproj
+│
+├── NvidiaVoiceAgent.ModelHub/                 # Model Download Class Library
+│   ├── IModelDownloadService.cs               # Download service interface
+│   ├── ModelDownloadService.cs                # HuggingFace download implementation
+│   ├── IModelRegistry.cs                      # Model registry interface
+│   ├── ModelRegistry.cs                       # Default model definitions
+│   ├── ModelInfo.cs                           # Model metadata DTO
+│   ├── ModelType.cs                           # Model type enum (ASR, TTS, LLM)
+│   ├── DownloadProgress.cs                    # Download progress DTO
+│   ├── DownloadResult.cs                      # Download result DTO
+│   ├── ModelHubOptions.cs                     # Configuration options
+│   ├── IProgressReporter.cs                   # Progress reporting interface
+│   ├── ConsoleProgressReporter.cs             # Console progress reporter
+│   ├── ServiceCollectionExtensions.cs         # DI registration helpers
+│   └── NvidiaVoiceAgent.ModelHub.csproj
+│
 ├── tests/
-│   └── NvidiaVoiceAgent.Tests/
-│       ├── HealthEndpointTests.cs      # Health endpoint tests
-│       ├── VoiceWebSocketTests.cs      # WebSocket handler tests
-│       ├── AudioProcessorTests.cs      # Audio processing tests
-│       ├── ConfigMessageTests.cs       # Message parsing tests
-│       ├── LogBroadcasterTests.cs      # Log broadcasting tests
-│       └── WebApplicationFactoryFixture.cs
+│   ├── NvidiaVoiceAgent.Tests/                # Web app tests (37 tests)
+│   │   ├── HealthEndpointTests.cs
+│   │   ├── VoiceWebSocketTests.cs
+│   │   ├── AudioProcessorTests.cs
+│   │   ├── ConfigMessageTests.cs
+│   │   └── LogBroadcasterTests.cs
+│   └── NvidiaVoiceAgent.ModelHub.Tests/       # ModelHub tests (30 tests)
+│       ├── ModelRegistryTests.cs
+│       ├── ModelDownloadServiceTests.cs
+│       ├── ConsoleProgressReporterTests.cs
+│       ├── DownloadProgressTests.cs
+│       └── ModelHubOptionsTests.cs
+│
 ├── docs/
-│   └── plans/                      # Project plans and proposals
+│   └── plans/                                 # Project plans and proposals
 └── README.md
 ```
 
@@ -327,12 +390,14 @@ The application includes **Mock Mode** for development without models:
 
 ### Model Loading
 
-The application automatically searches for model files:
+The application automatically manages model availability:
 
-1. Checks configured path in `appsettings.json`
-2. Tries common filenames: `encoder.onnx`, `model.onnx`, `{name}.onnx`
-3. Recursively searches subdirectories for `.onnx` files
-4. Falls back to **Mock Mode** if no models found
+1. On startup, checks if required models are cached locally
+2. If missing and auto-download is enabled, downloads from HuggingFace via **ModelHub**
+3. Checks configured path in `appsettings.json`
+4. Tries common filenames: `encoder.onnx`, `model.onnx`, `{name}.onnx`
+5. Recursively searches subdirectories for `.onnx` files
+6. Falls back to **Mock Mode** if no models found and download fails
 
 ## 🛠️ Development
 
@@ -456,13 +521,18 @@ dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
 
 | Component | Coverage | Tests |
 |-----------|----------|-------|
-| AudioProcessor | 95% | 12 |
-| WebSocket Handlers | 90% | 10 |
+| AudioProcessor | 95% | 10 |
+| WebSocket Handlers | 90% | 6 |
 | Health Endpoint | 100% | 5 |
 | Log Broadcaster | 85% | 8 |
-| Config Messages | 100% | 2 |
+| Config Messages | 100% | 10 |
+| Model Registry | 95% | 11 |
+| Model Download Service | 90% | 7 |
+| Console Progress Reporter | 85% | 6 |
+| Download Progress | 100% | 4 |
+| ModelHub Options | 100% | 4 |
 
-**Total:** 37 tests, all passing ✅
+**Total:** 67 tests, all passing ✅
 
 ## 🚨 Troubleshooting
 
@@ -586,6 +656,7 @@ Contributions are welcome! Please:
 ### Coding Standards
 
 - Follow C# naming conventions (PascalCase for public members)
+- **One class per file** - each class, interface, enum, or record in its own file
 - Use nullable reference types (`#nullable enable`)
 - Add XML documentation for public APIs
 - Write unit tests for new services
