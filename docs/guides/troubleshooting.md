@@ -100,7 +100,9 @@ dotnet build
 
 **Solutions:**
 
-1. Delete the incomplete model cache and restart the app to trigger a fresh download:
+1. Restart the app — it will detect the missing file and re-download all model files automatically (using `forceDownload` to overwrite any existing partial files).
+
+2. If auto-download still fails, delete the incomplete cache and restart:
 
    ```bash
    # Windows
@@ -108,7 +110,7 @@ dotnet build
    cd NvidiaVoiceAgent && dotnet run
    ```
 
-2. Manually download the missing file:
+3. Manually download the missing file:
 
    ```bash
    pip install huggingface-hub

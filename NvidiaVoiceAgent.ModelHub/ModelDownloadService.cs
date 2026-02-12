@@ -123,10 +123,12 @@ public class ModelDownloadService : IModelDownloadService
             });
 
             // Download main model file with progress reporting
+            // Use forceDownload to overwrite partially-cached files
             var modelPath = await HFDownloader.DownloadFileAsync(
                 model.RepoId,
                 model.Filename,
                 localDir: localDir,
+                forceDownload: true,
                 token: _options.HuggingFaceToken,
                 progress: progress);
 
@@ -141,6 +143,7 @@ public class ModelDownloadService : IModelDownloadService
                         model.RepoId,
                         additionalFile,
                         localDir: localDir,
+                        forceDownload: true,
                         token: _options.HuggingFaceToken);
 
                     _logger.LogDebug("Downloaded additional file: {File}", additionalFile);
