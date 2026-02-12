@@ -61,10 +61,11 @@ if (app.Environment.IsDevelopment())
 }
 
 // Health check endpoint
-app.MapGet("/health", (IAsrService asrService) => new HealthStatus
+app.MapGet("/health", (IAsrService asrService, IModelDownloadService modelDownload) => new HealthStatus
 {
     Status = "healthy",
     AsrLoaded = asrService.IsModelLoaded,
+    AsrDownloaded = modelDownload.IsModelAvailable(ModelType.Asr),
     TtsLoaded = false,  // TODO: Check actual service status
     LlmLoaded = false,
     Timestamp = DateTime.UtcNow

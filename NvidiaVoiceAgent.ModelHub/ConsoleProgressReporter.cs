@@ -64,4 +64,10 @@ public class ConsoleProgressReporter : IProgressReporter
             _logger.LogWarning("Download failed: {ModelName}", modelName);
         }
     }
+
+    /// <inheritdoc />
+    public void OnModelCached(string modelName, string modelPath)
+    {
+        _logger.LogInformation("Model already downloaded: {ModelName} at {Path}", modelName, modelPath);
+    }
 }

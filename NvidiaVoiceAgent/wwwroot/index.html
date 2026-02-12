@@ -177,6 +177,27 @@
             padding: 0.5rem 0;
             flex-shrink: 0;
         }
+        .model-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            color: #888;
+            padding: 0.4rem 0.75rem;
+            background: #141414;
+            border-radius: 8px;
+            border: 1px solid #222;
+        }
+        .model-status .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .model-status .dot.ready { background: #76b900; }
+        .model-status .dot.loading { background: #ffb74d; animation: blink 1s infinite; }
+        .model-status .dot.missing { background: #ef5350; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         .clear-chat-btn {
             background: #333;
             color: #aaa;
@@ -324,6 +345,10 @@
 
     <div class="top-bar">
         <div id="status" class="disconnected">Disconnected</div>
+        <div class="model-status" id="modelStatus">
+            <span class="dot loading" id="modelDot"></span>
+            <span id="modelStatusText">Checking models…</span>
+        </div>
         <div class="model-select" id="modelSelect">
             <label for="modelPicker">Model</label>
             <select id="modelPicker">
@@ -373,6 +398,9 @@
         const modelSelectDiv = document.getElementById('modelSelect');
         const modelPicker = document.getElementById('modelPicker');
         const clearChatBtn = document.getElementById('clearChatBtn');
+        const modelStatusEl = document.getElementById('modelStatus');
+        const modelDot = document.getElementById('modelDot');
+        const modelStatusText = document.getElementById('modelStatusText');
 
         let ws = null;
         let logWs = null;
@@ -428,6 +456,7 @@
             logWs.onmessage = (event) => {
                 const entry = JSON.parse(event.data);
                 appendLog(entry.timestamp, entry.level, entry.message, entry.detail || '');
+                updateModelStatusFromLog(entry.message);
             };
             logWs.onclose = () => setTimeout(connectLogs, 3000);
             logWs.onerror = () => logWs.close();
@@ -483,6 +512,63 @@
 
         connectLogs();
 
+        function updateModelStatusFromLog(msg) {
+            if (!msg) return;
+            // Match download progress messages from WebProgressReporter
+            const progressMatch = msg.match(/Downloading .+?:\s*([\d.]+)%/);
+            if (progressMatch) {
+                modelDot.className = 'dot loading';
+                modelStatusText.textContent = `Downloading ASR… ${parseFloat(progressMatch[1]).toFixed(0)}%`;
+                return;
+            }
+            if (msg.includes('Download started:')) {
+                modelDot.className = 'dot loading';
+                modelStatusText.textContent = 'Downloading ASR model…';
+                return;
+            }
+            if (msg.includes('Download complete:')) {
+                modelDot.className = 'dot ready';
+                modelStatusText.textContent = 'ASR model downloaded';
+                return;
+            }
+            if (msg.includes('Download failed:')) {
+                modelDot.className = 'dot missing';
+                modelStatusText.textContent = 'ASR download failed';
+                return;
+            }
+            if (msg.includes('Model already downloaded:')) {
+                modelDot.className = 'dot ready';
+                modelStatusText.textContent = 'ASR model downloaded';
+                return;
+            }
+        }
+
+        async function checkModelStatus() {
+            try {
+                const resp = await fetch('/health');
+                const data = await resp.json();
+                const asrLoaded = data.asr_loaded;
+                const asrDownloaded = data.asr_downloaded;
+
+                if (asrLoaded) {
+                    modelDot.className = 'dot ready';
+                    modelStatusText.textContent = 'ASR model ready';
+                    clientLog('✅ ASR model loaded and ready');
+                } else if (asrDownloaded) {
+                    modelDot.className = 'dot ready';
+                    modelStatusText.textContent = 'ASR model downloaded';
+                    clientLog('✅ ASR model files downloaded (loads on first use)');
+                } else {
+                    modelDot.className = 'dot missing';
+                    modelStatusText.textContent = 'ASR model not available';
+                    clientLog('⚠️ ASR model not downloaded');
+                }
+            } catch (e) {
+                modelDot.className = 'dot missing';
+                modelStatusText.textContent = 'Status unavailable';
+            }
+        }
+
         function connect() {
             const proto = location.protocol === 'https:' ? 'wss' : 'ws';
             ws = new WebSocket(`${proto}://${location.host}/ws/voice`);
@@ -491,6 +577,7 @@
                 statusEl.className = 'connected';
                 clientLog('Voice WebSocket connected');
                 sendSmartModeConfig();
+                checkModelStatus();
             };
             ws.onclose = () => {
                 statusEl.textContent = 'Disconnected — reconnecting …';

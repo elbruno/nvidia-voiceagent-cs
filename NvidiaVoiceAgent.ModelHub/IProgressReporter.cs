@@ -24,4 +24,11 @@ public interface IProgressReporter
     /// <param name="modelName">Name of the model that was downloaded.</param>
     /// <param name="success">Whether the download succeeded.</param>
     void OnDownloadCompleted(string modelName, bool success);
+
+    /// <summary>
+    /// Report that a model was already cached and did not need downloading.
+    /// </summary>
+    /// <param name="modelName">Name of the cached model.</param>
+    /// <param name="modelPath">Local path where the model is cached.</param>
+    void OnModelCached(string modelName, string modelPath);
 }

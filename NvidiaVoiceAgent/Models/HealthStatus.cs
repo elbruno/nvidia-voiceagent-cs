@@ -13,6 +13,9 @@ public class HealthStatus
     [JsonPropertyName("asr_loaded")]
     public bool AsrLoaded { get; set; }
 
+    [JsonPropertyName("asr_downloaded")]
+    public bool AsrDownloaded { get; set; }
+
     [JsonPropertyName("tts_loaded")]
     public bool TtsLoaded { get; set; }
 

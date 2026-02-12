@@ -76,4 +76,12 @@ public class WebProgressReporter : IProgressReporter
 
         _ = _logBroadcaster.BroadcastLogAsync(message, level);
     }
+
+    /// <inheritdoc />
+    public void OnModelCached(string modelName, string modelPath)
+    {
+        var message = $"✅ Model already downloaded: {modelName}";
+        _logger.LogInformation(message);
+        _ = _logBroadcaster.BroadcastLogAsync(message, "INFO");
+    }
 }

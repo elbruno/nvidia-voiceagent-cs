@@ -144,8 +144,8 @@ public class ModelRegistryTests
         // Assert
         model.Should().NotBeNull();
         model!.AdditionalFiles.Should().NotBeEmpty();
-        model.AdditionalFiles.Should().Contain("config.json");
         model.AdditionalFiles.Should().Contain("onnx/encoder.onnx_data");
         model.AdditionalFiles.Should().Contain("onnx/decoder.onnx");
+        model.AdditionalFiles.Should().HaveCount(2);
     }
 }

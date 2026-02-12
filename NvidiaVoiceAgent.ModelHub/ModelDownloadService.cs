@@ -43,6 +43,7 @@ public class ModelDownloadService : IModelDownloadService
             {
                 var cachedPath = GetModelPath(model.Type);
                 _logger.LogInformation("Model {ModelName} already available at {Path}", model.Name, cachedPath);
+                _progressReporter.OnModelCached(model.Name, cachedPath!);
                 results.Add(new DownloadResult
                 {
                     Success = true,

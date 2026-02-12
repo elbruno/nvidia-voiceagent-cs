@@ -25,7 +25,7 @@ public class ModelRegistry : IModelRegistry
                 ExpectedSizeBytes = 2_665_185_280L, // ~2.48 GB for encoder.onnx_data + encoder.onnx
                 LocalDirectory = "parakeet-tdt-0.6b",
                 IsRequired = true,
-                AdditionalFiles = ["config.json", "onnx/encoder.onnx_data", "onnx/decoder.onnx"]
+                AdditionalFiles = ["onnx/encoder.onnx_data", "onnx/decoder.onnx"]
             }
         };
     }
