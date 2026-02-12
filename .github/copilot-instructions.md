@@ -7,14 +7,18 @@ This is a production-ready, real-time voice agent built with **ASP.NET Core 10**
 ## Repository Documentation Guidelines
 
 ### Root-Level Files
+
 Only the following files should exist at the repository root:
+
 - `README.md` - Main project documentation
 - `LICENSE` - Project license file
 - Code files and solution files (`.slnx`, `.csproj`, `.cs`, etc.)
 - Configuration files (`.gitignore`, `.gitattributes`, `.editorconfig`)
 
 ### Documentation Folder Structure
+
 All additional documentation must be stored in the `docs/` folder:
+
 ```
 docs/
 ├── plans/           # Project plans and proposals
@@ -24,11 +28,15 @@ docs/
 ```
 
 ### Plan Files Naming Convention
+
 All plan files must be saved in `docs/plans/` with the following naming format:
+
 ```
 plan_YYMMDD_HHMM.md
 ```
+
 Where:
+
 - `YYMMDD` - Date the plan was created (e.g., `260212` for Feb 12, 2026)
 - `HHMM` - Time the plan was created in 24-hour format (e.g., `0930` for 9:30 AM)
 
@@ -49,12 +57,14 @@ Where:
 ### 1. Service-Based Architecture
 
 All business logic is encapsulated in services:
+
 - **AsrService** - Speech-to-text using ONNX models
 - **AudioProcessor** - WAV encoding/decoding and resampling
 - **MelSpectrogramExtractor** - Audio feature extraction
 - **LogBroadcaster** - Multi-client log distribution
 
 Use dependency injection for all services:
+
 ```csharp
 builder.Services.AddSingleton<IAsrService, AsrService>();
 builder.Services.AddSingleton<IAudioProcessor, AudioProcessor>();
@@ -63,10 +73,12 @@ builder.Services.AddSingleton<IAudioProcessor, AudioProcessor>();
 ### 2. WebSocket Handlers
 
 WebSocket communication is handled by specialized handlers in the `Hubs/` directory:
+
 - **VoiceWebSocketHandler** - Voice processing pipeline (ASR → LLM → TTS)
 - **LogsWebSocketHandler** - Real-time log streaming
 
 Handlers should:
+
 - Handle both binary and text messages
 - Manage session state per connection
 - Properly dispose resources on disconnect
@@ -75,13 +87,14 @@ Handlers should:
 ### 3. Lazy Loading with Thread Safety
 
 Models are loaded lazily using semaphore-protected initialization:
+
 ```csharp
 private readonly SemaphoreSlim _loadLock = new(1, 1);
 
 public async Task LoadModelAsync(CancellationToken cancellationToken = default)
 {
     if (_isModelLoaded) return;
-    
+
     await _loadLock.WaitAsync(cancellationToken);
     try
     {
@@ -99,12 +112,14 @@ public async Task LoadModelAsync(CancellationToken cancellationToken = default)
 ### 4. Graceful Degradation (Mock Mode)
 
 Services should gracefully degrade when models are unavailable:
+
 - Check for model files during initialization
 - Set `_isMockMode = true` if models not found
 - Provide simulated responses for development/testing
 - Log warnings when running in mock mode
 
 Example:
+
 ```csharp
 if (modelPath == null)
 {
@@ -115,6 +130,36 @@ if (modelPath == null)
 ```
 
 ## Coding Conventions
+
+### One Class Per File Rule
+
+> **CRITICAL:** Each C# class, interface, enum, or record MUST be in its own file.
+
+**File Naming:**
+
+- File name must match the type name exactly
+- `MyClass.cs` contains only `class MyClass`
+- `IMyService.cs` contains only `interface IMyService`
+- `MyEnum.cs` contains only `enum MyEnum`
+
+**Exception:** Nested private classes may remain in parent class file.
+
+**Rationale:**
+
+- Improves code navigation and discoverability
+- Enables better source control tracking
+- Follows .NET community best practices
+- Makes refactoring easier
+
+**Example:**
+
+```
+Models/
+├── ModelConfig.cs        # Contains only ModelConfig class
+├── VoiceResponse.cs      # Contains only VoiceResponse class
+├── VoiceMode.cs          # Contains only VoiceMode enum
+└── IAsrService.cs        # Contains only IAsrService interface
+```
 
 ### Naming Standards
 
@@ -129,18 +174,43 @@ if (modelPath == null)
 ### File Organization
 
 ```
-NvidiaVoiceAgent/
-├── Hubs/           # WebSocket handlers only
-├── Services/       # Business logic, interfaces first
-├── Models/         # DTOs, configuration models
-├── wwwroot/        # Static files (HTML, CSS, JS)
-├── Program.cs      # DI configuration and routing
-└── appsettings.json
+nvidia-voiceagent-cs/
+├── NvidiaVoiceAgent/              # ASP.NET Core Web Application
+│   ├── Hubs/                      # WebSocket handlers only
+│   ├── Services/                  # Business logic, interfaces first
+│   ├── Models/                    # DTOs, configuration models (one class per file)
+│   ├── wwwroot/                   # Static files (HTML, CSS, JS)
+│   ├── Program.cs                 # DI configuration and routing
+│   └── appsettings.json
+│
+├── NvidiaVoiceAgent.ModelHub/     # Model download class library
+│   ├── IModelDownloadService.cs   # Interfaces
+│   ├── ModelDownloadService.cs    # Implementations
+│   └── ...                        # One class per file
+│
+├── NvidiaVoiceAgent.Core/         # (Future) Core ML services library
+│
+├── tests/
+│   ├── NvidiaVoiceAgent.Tests/
+│   └── NvidiaVoiceAgent.ModelHub.Tests/
+│
+└── docs/
+    └── plans/                     # Project plans (plan_YYMMDD_HHMM.md)
 ```
+
+### Class Library Guidelines
+
+When creating new class libraries:
+
+1. **Minimal Dependencies** - Only include necessary packages
+2. **No ASP.NET Dependencies** - Keep libraries framework-agnostic
+3. **Interface-First** - Define interfaces before implementations
+4. **DI Extensions** - Provide `ServiceCollectionExtensions.cs` for easy registration
 
 ### Code Style
 
 1. **Nullable Reference Types**: Always enabled (`#nullable enable`)
+
    ```csharp
    public string? OptionalValue { get; set; }  // Explicitly nullable
    public string RequiredValue { get; set; } = string.Empty;  // Non-null
@@ -152,6 +222,7 @@ NvidiaVoiceAgent/
    - Avoid `async void` except for event handlers
 
 3. **Error Handling**:
+
    ```csharp
    try
    {
@@ -165,6 +236,7 @@ NvidiaVoiceAgent/
    ```
 
 4. **Disposal Pattern**:
+
    ```csharp
    public void Dispose()
    {
@@ -187,6 +259,7 @@ NvidiaVoiceAgent/
 ### Documentation
 
 1. **Public APIs**: Use XML documentation comments
+
    ```csharp
    /// <summary>
    /// Transcribes audio samples to text using ONNX-based ASR model.
@@ -225,10 +298,10 @@ public async Task TranscribeAsync_WithValidAudio_ReturnsTranscript()
     // Arrange
     var service = CreateAsrService();
     var audioSamples = GenerateTestAudio(duration: 1.0f);
-    
+
     // Act
     var result = await service.TranscribeAsync(audioSamples);
-    
+
     // Assert
     result.Should().NotBeNullOrEmpty();
 }
@@ -246,11 +319,12 @@ audioData.Should().HaveCountGreaterThan(0);
 ### Test Fixtures
 
 Use `WebApplicationFactory<Program>` for integration tests:
+
 ```csharp
 public class VoiceWebSocketTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _factory;
-    
+
     public VoiceWebSocketTests(WebApplicationFactory<Program> factory)
     {
         _factory = factory;
@@ -298,6 +372,7 @@ catch
 ### Message Types
 
 **Binary Messages**: Audio data (WAV format)
+
 ```csharp
 if (result.MessageType == WebSocketMessageType.Binary)
 {
@@ -307,6 +382,7 @@ if (result.MessageType == WebSocketMessageType.Binary)
 ```
 
 **Text Messages**: Configuration, commands
+
 ```csharp
 if (result.MessageType == WebSocketMessageType.Text)
 {
@@ -318,6 +394,7 @@ if (result.MessageType == WebSocketMessageType.Text)
 ### Response Format
 
 Use JSON serialization with `System.Text.Json`:
+
 ```csharp
 var response = new VoiceResponse
 {
@@ -343,25 +420,26 @@ await webSocket.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationTo
 ### Resampling
 
 Linear interpolation for sample rate conversion:
+
 ```csharp
 public float[] Resample(float[] input, int inputRate, int outputRate)
 {
     double ratio = (double)inputRate / outputRate;
     int outputLength = (int)(input.Length / ratio);
     var output = new float[outputLength];
-    
+
     for (int i = 0; i < outputLength; i++)
     {
         double srcPos = i * ratio;
         int srcIndex = (int)srcPos;
         double fraction = srcPos - srcIndex;
-        
+
         if (srcIndex + 1 < input.Length)
             output[i] = (float)(input[srcIndex] * (1 - fraction) + input[srcIndex + 1] * fraction);
         else
             output[i] = input[srcIndex];
     }
-    
+
     return output;
 }
 ```
@@ -369,6 +447,7 @@ public float[] Resample(float[] input, int inputRate, int outputRate)
 ### Mel-Spectrogram Extraction
 
 Parakeet-TDT specifications:
+
 - **80 mel bins**, 512-point FFT
 - **25ms window**, 10ms hop
 - **Hann window** function
@@ -412,11 +491,13 @@ _messageBuffer.SetLength(0);
 ### NuGet Packages
 
 When adding packages:
+
 1. Verify .NET 10 compatibility
 2. Use latest stable versions
 3. Avoid redundant packages (e.g., System.Text.Json is built-in)
 
 Current packages:
+
 ```xml
 <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
 <PackageReference Include="TorchSharp" Version="0.102.6" />
