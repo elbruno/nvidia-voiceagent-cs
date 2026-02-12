@@ -1,685 +1,107 @@
-# 🎙️ NVIDIA Voice Agent (C#)
+# NVIDIA Voice Agent (C#)
 
-A production-ready, real-time voice agent built with **ASP.NET Core 10** that performs Speech-to-Text (ASR), LLM processing, and Text-to-Speech (TTS) using NVIDIA NIM models via ONNX Runtime.
+A real-time voice agent built with **ASP.NET Core 10** that performs Speech-to-Text (ASR), LLM processing, and Text-to-Speech (TTS) using NVIDIA NIM models via ONNX Runtime.
 
 **Ported from:** [nvidia-transcribe/scenario5](https://github.com/elbruno/nvidia-transcribe/tree/main/scenario5)
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
-[![Tests](https://img.shields.io/badge/tests-67%20passed-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
+[![Tests](https://img.shields.io/badge/tests-68%20passed-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
 
-## ✨ Features
+## Features
 
-- 🎤 **Real-time Speech Recognition** - NVIDIA Parakeet-TDT-0.6B-V2 ASR model (16kHz mono)
-- 🤖 **LLM Integration** - Phi-3-mini-4k or TinyLlama with 4-bit quantization support
-- 🔊 **Text-to-Speech** - FastPitch + HiFiGAN for natural voice synthesis (22050Hz)
-- 🌐 **WebSocket API** - Real-time bi-directional audio streaming with session management
-- 📱 **Browser UI** - Modern, responsive web interface
-- 🔄 **Smart & Echo Modes** - Toggle between AI-powered responses and echo mode
-- 📊 **Real-time Logging** - Live log streaming via WebSocket
-- 📥 **Automatic Model Download** - Downloads ONNX models from HuggingFace on first run
-- 🎭 **Mock Mode** - Graceful development fallback when models are unavailable
-- 🚀 **GPU Acceleration** - CUDA support with automatic CPU fallback
-- 💪 **Production Ready** - Comprehensive error handling and resource management
+- **Real-time Speech Recognition** — NVIDIA Parakeet-TDT-0.6B-V2 via ONNX Runtime
+- **LLM Integration** — Phi-3-mini-4k / TinyLlama with 4-bit quantization
+- **Text-to-Speech** — FastPitch + HiFiGAN voice synthesis
+- **WebSocket Streaming** — Bi-directional audio via `/ws/voice` and `/ws/logs`
+- **Browser UI** — Models panel with download status, progress bars, and disk paths
+- **Auto Model Download** — Fetches ONNX models from HuggingFace on first run
+- **Mock Mode** — Full development workflow without downloading models
+- **GPU Acceleration** — CUDA with automatic CPU fallback
 
-## 🏗️ Architecture
+## Prerequisites
 
-```
-┌─────────────┐     WebSocket      ┌──────────────────────────────────────┐
-│  Browser    │◄──────────────────►│  ASP.NET Core 10 Server              │
-│  (UI)       │   /ws/voice        │                                      │
-│             │   /ws/logs         │  ┌─────┐   ┌─────┐   ┌─────┐        │
-└─────────────┘                    │  │ ASR │──►│ LLM │──►│ TTS │        │
-                                   │  └─────┘   └─────┘   └─────┘        │
-                                   │  ONNX Runtime (GPU/CPU)              │
-                                   │  • Lazy Loading                      │
-                                   │  • Thread-Safe                       │
-                                   │  • Session Management                │
-                                   └──────────────────────────────────────┘
-```
+- [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- (Optional) NVIDIA GPU with CUDA 11.8+ for GPU acceleration
 
-### Voice Processing Pipeline
-
-```
-Browser WAV Audio (Binary)
-    ↓
-Decode & Resample (16kHz mono)
-    ↓
-ASR: Mel-Spectrogram → ONNX Inference → CTC Decoding
-    ↓ [Transcript]
-Send TranscriptResponse to Browser
-    ↓
-Smart Mode Check
-    ├─ YES: LLM Processing → Chat History → Response
-    └─ NO: Echo Mode (repeat transcript)
-    ↓
-TTS: Text → FastPitch → HiFiGAN → WAV (22050Hz)
-    ↓
-Send VoiceResponse (transcript + response + base64 audio)
-```
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- **.NET 10.0 SDK** - [Download](https://dotnet.microsoft.com/download/dotnet/10.0)
-- (Optional) **NVIDIA GPU** with CUDA 11.8+ for GPU acceleration
-- (Optional) **ONNX Model Files** - Download from NVIDIA NIM or Hugging Face
-
-### Installation
+## Quick Start
 
 ```bash
-# Clone the repository
+# Clone and build
 git clone https://github.com/elbruno/nvidia-voiceagent-cs.git
 cd nvidia-voiceagent-cs
-
-# Restore dependencies
-dotnet restore
-
-# Build the project
 dotnet build
-```
 
-### Run the Application
-
-```bash
+# Run the app
 cd NvidiaVoiceAgent
 dotnet run
 ```
 
-The application will start on **<http://localhost:5000>** (or the port configured in your environment).
+Open **<http://localhost:5003>** in your browser. The app auto-downloads the ASR model on first run (~1.2 GB).
 
-Open <http://localhost:5000> in your browser to access the voice interface.
+> **No GPU?** The app works on CPU and falls back to Mock Mode if models are unavailable.
 
-### Run Tests
+## Run Tests
 
 ```bash
-# Run all tests
 dotnet test
-
-# Run with verbose output
-dotnet test --logger "console;verbosity=detailed"
-
-# Run tests with coverage
-dotnet test /p:CollectCoverage=true
 ```
 
-**Test Results:** 67 tests passed ✅ (37 web + 30 ModelHub)
+68 tests across 3 test projects (Web, Core, ModelHub) — all passing.
 
-## ⚙️ Configuration
+## Configuration
 
-### appsettings.json
+Edit `NvidiaVoiceAgent/appsettings.json`:
 
-```json
-{
-  "ModelConfig": {
-    "AsrModelPath": "models/parakeet-tdt-0.6b",
-    "FastPitchModelPath": "models/fastpitch",
-    "HifiGanModelPath": "models/hifigan",
-    "LlmModelPath": "models/phi-3-mini-4k-instruct",
-    "UseGpu": true,
-    "Use4BitQuantization": true
-  },
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information",
-      "Microsoft.AspNetCore": "Warning"
-    }
-  }
-}
-```
-
-### Configuration Options
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `AsrModelPath` | Path to ASR ONNX model directory or file | `models/parakeet-tdt-0.6b` |
-| `FastPitchModelPath` | Path to FastPitch TTS model | `models/fastpitch` |
-| `HifiGanModelPath` | Path to HiFiGAN vocoder model | `models/hifigan` |
-| `LlmModelPath` | Path to LLM ONNX model | `models/phi-3-mini-4k-instruct` |
-| `UseGpu` | Enable GPU acceleration (requires CUDA) | `true` |
-| `Use4BitQuantization` | Enable 4-bit quantization for LLM | `true` |
-
-### ModelHub Configuration (Automatic Model Download)
-
-The application automatically downloads required ONNX models from HuggingFace on first run using the ModelHub library.
-
-```json
+```jsonc
 {
   "ModelHub": {
-    "AutoDownload": true,
-    "UseInt8Quantization": true,
-    "ModelCachePath": "model-cache",
-    "HuggingFaceToken": null
+    "AutoDownload": true,          // Download models on startup
+    "UseInt8Quantization": true,   // Prefer quantized models
+    "ModelCachePath": "model-cache" // Local cache directory
+  },
+  "ModelConfig": {
+    "UseGpu": true,                // CUDA acceleration
+    "Use4BitQuantization": true    // LLM quantization
   }
 }
 ```
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `AutoDownload` | Automatically download missing models on startup | `true` |
-| `UseInt8Quantization` | Prefer INT8 quantized models (smaller/faster) | `true` |
-| `ModelCachePath` | Local directory for caching downloaded models | `model-cache` |
-| `HuggingFaceToken` | HuggingFace API token for gated models (optional) | `null` |
-
-**First Run Behavior:**
-
-1. Application checks for required models in the configured cache path
-2. If models are missing and `AutoDownload` is `true`, downloads from HuggingFace
-3. Download progress is displayed in console logs and broadcast to WebSocket clients
-4. Subsequent runs use cached models (no re-download)
-5. If downloads fail, the application falls back to Mock Mode
-
-### Environment Variables
-
-```bash
-# Override application URLs
-export ASPNETCORE_URLS="http://localhost:8080"
-
-# Set environment
-export ASPNETCORE_ENVIRONMENT="Production"
-
-# Configure logging
-export Logging__LogLevel__Default="Debug"
-```
-
-## 🔌 API Endpoints
-
-### HTTP Endpoints
-
-| Endpoint | Method | Description | Response |
-|----------|--------|-------------|----------|
-| `/health` | GET | Health check and service status | JSON with model status |
-| `/` | GET | Serve web UI | HTML |
-
-**Health Check Response:**
-
-```json
-{
-  "status": "healthy",
-  "asrLoaded": true,
-  "ttsLoaded": false,
-  "llmLoaded": false,
-  "timestamp": "2026-02-12T12:00:00Z"
-}
-```
-
-### WebSocket Endpoints
-
-#### `/ws/voice` - Voice Processing
-
-**Connection:** `ws://localhost:5000/ws/voice`
-
-**Send Messages:**
-
-1. **Binary Audio** (WAV format)
-   - Format: 16-bit PCM, mono, 16kHz
-   - Encoding: WAV with RIFF header
-
-2. **Configuration** (Text JSON)
-
-   ```json
-   {
-     "type": "config",
-     "smartMode": true,
-     "smartModel": "phi-3"
-   }
-   ```
-
-3. **Clear History** (Text JSON)
-
-   ```json
-   {
-     "type": "clear_history"
-   }
-   ```
-
-**Receive Messages:**
-
-1. **Transcript Response**
-
-   ```json
-   {
-     "type": "transcript",
-     "text": "Hello, how can I help you?"
-   }
-   ```
-
-2. **Thinking Indicator** (Smart Mode only)
-
-   ```json
-   {
-     "type": "thinking"
-   }
-   ```
-
-3. **Voice Response** (All-in-One)
-
-   ```json
-   {
-     "type": "voice",
-     "transcript": "Hello, how can I help you?",
-     "response": "I'm here to assist you!",
-     "audioData": "<base64-encoded-wav>"
-   }
-   ```
-
-#### `/ws/logs` - Real-time Logs
-
-**Connection:** `ws://localhost:5000/ws/logs`
-
-**Receive Messages:**
-
-```json
-{
-  "timestamp": "2026-02-12T12:00:00Z",
-  "level": "info",
-  "message": "ASR model loaded successfully"
-}
-```
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 nvidia-voiceagent-cs/
-├── NvidiaVoiceAgent/                          # ASP.NET Core Web App
-│   ├── Hubs/                                  # WebSocket handlers
-│   │   ├── VoiceWebSocketHandler.cs           # Voice processing pipeline
-│   │   └── LogsWebSocketHandler.cs            # Log streaming
-│   ├── Services/                              # Core business logic
-│   │   ├── AsrService.cs                      # Speech-to-text (ONNX)
-│   │   ├── AudioProcessor.cs                  # WAV codec, resampling
-│   │   ├── MelSpectrogramExtractor.cs         # Audio feature extraction
-│   │   ├── LogBroadcaster.cs                  # Multi-client log distribution
-│   │   ├── WebProgressReporter.cs             # Download progress → WebSocket
-│   │   ├── IAsrService.cs                     # ASR interface
-│   │   ├── IAudioProcessor.cs                 # Audio processor interface
-│   │   ├── ILogBroadcaster.cs                 # Log broadcaster interface
-│   │   ├── ITtsService.cs                     # TTS interface (TODO)
-│   │   └── ILlmService.cs                     # LLM interface (TODO)
-│   ├── Models/                                # DTOs and configuration (one class per file)
-│   │   ├── ModelConfig.cs                     # AI model paths configuration
-│   │   ├── VoiceSessionState.cs               # WebSocket session state
-│   │   ├── ChatMessage.cs                     # Chat history message
-│   │   ├── ConfigMessage.cs                   # Client config message
-│   │   ├── TranscriptResponse.cs              # Transcript response DTO
-│   │   ├── ThinkingResponse.cs                # Thinking indicator DTO
-│   │   ├── VoiceResponse.cs                   # Full voice response DTO
-│   │   ├── VoiceMode.cs                       # Mode enum (Echo/Smart)
-│   │   ├── VoiceMessage.cs                    # Voice command message
-│   │   ├── LogEntry.cs                        # Log entry DTO
-│   │   └── HealthStatus.cs                    # Health check response
-│   ├── wwwroot/                               # Static web UI
-│   ├── Program.cs                             # DI configuration and routing
-│   ├── appsettings.json                       # Configuration
-│   └── NvidiaVoiceAgent.csproj
-│
-├── NvidiaVoiceAgent.ModelHub/                 # Model Download Class Library
-│   ├── IModelDownloadService.cs               # Download service interface
-│   ├── ModelDownloadService.cs                # HuggingFace download implementation
-│   ├── IModelRegistry.cs                      # Model registry interface
-│   ├── ModelRegistry.cs                       # Default model definitions
-│   ├── ModelInfo.cs                           # Model metadata DTO
-│   ├── ModelType.cs                           # Model type enum (ASR, TTS, LLM)
-│   ├── DownloadProgress.cs                    # Download progress DTO
-│   ├── DownloadResult.cs                      # Download result DTO
-│   ├── ModelHubOptions.cs                     # Configuration options
-│   ├── IProgressReporter.cs                   # Progress reporting interface
-│   ├── ConsoleProgressReporter.cs             # Console progress reporter
-│   ├── ServiceCollectionExtensions.cs         # DI registration helpers
-│   └── NvidiaVoiceAgent.ModelHub.csproj
-│
-├── tests/
-│   ├── NvidiaVoiceAgent.Tests/                # Web app tests (37 tests)
-│   │   ├── HealthEndpointTests.cs
-│   │   ├── VoiceWebSocketTests.cs
-│   │   ├── AudioProcessorTests.cs
-│   │   ├── ConfigMessageTests.cs
-│   │   └── LogBroadcasterTests.cs
-│   └── NvidiaVoiceAgent.ModelHub.Tests/       # ModelHub tests (30 tests)
-│       ├── ModelRegistryTests.cs
-│       ├── ModelDownloadServiceTests.cs
-│       ├── ConsoleProgressReporterTests.cs
-│       ├── DownloadProgressTests.cs
-│       └── ModelHubOptionsTests.cs
-│
-├── docs/
-│   └── plans/                                 # Project plans and proposals
-└── README.md
+├── NvidiaVoiceAgent/              # ASP.NET Core Web App (UI, WebSockets, endpoints)
+├── NvidiaVoiceAgent.Core/         # ML/Audio class library (ASR, AudioProcessor, MelSpectrogram)
+├── NvidiaVoiceAgent.ModelHub/     # Model download library (HuggingFace integration)
+├── tests/                         # xUnit test projects
+└── docs/                          # Detailed documentation
 ```
 
-## 🤖 ONNX Model Requirements
-
-### Model Specifications
-
-| Model | Purpose | Size | VRAM | Sample Rate |
-|-------|---------|------|------|-------------|
-| **Parakeet-TDT-0.6B-V2** | ASR | ~1.2GB | 2-4GB | 16kHz |
-| **FastPitch** | TTS Text Encoder | ~150MB | ~512MB | 22050Hz |
-| **HiFiGAN** | TTS Vocoder | ~100MB | ~512MB | 22050Hz |
-| **Phi-3-mini-4k** (int4) | LLM | ~2GB | ~4GB | N/A |
-| **TinyLlama** (int4) | LLM (Alternative) | ~1.5GB | ~3GB | N/A |
-
-**Total VRAM for full pipeline:** 6-8GB (recommended)
-
-### Model Acquisition
-
-#### Option 1: NVIDIA NIM
-
-1. Sign up for NVIDIA NGC account
-2. Download models from NVIDIA NIM catalog
-3. Convert to ONNX format if needed
-
-#### Option 2: Hugging Face
-
-```bash
-# Example: Download Parakeet model
-huggingface-cli download nvidia/parakeet-tdt-0.6b --local-dir models/parakeet-tdt-0.6b
-
-# Convert to ONNX (if needed)
-python convert_to_onnx.py --model models/parakeet-tdt-0.6b
-```
-
-#### Option 3: Use Mock Mode
-
-The application includes **Mock Mode** for development without models:
-
-- ASR returns simulated transcripts based on audio duration
-- TTS returns silent WAV files
-- Allows UI/WebSocket testing without downloading 3GB+ of models
-
-### Model Loading
-
-The application automatically manages model availability:
-
-1. On startup, checks if required models are cached locally
-2. If missing and auto-download is enabled, downloads from HuggingFace via **ModelHub**
-3. Checks configured path in `appsettings.json`
-4. Tries common filenames: `encoder.onnx`, `model.onnx`, `{name}.onnx`
-5. Recursively searches subdirectories for `.onnx` files
-6. Falls back to **Mock Mode** if no models found and download fails
-
-## 🛠️ Development
-
-### Mock Mode (No Models Required)
-
-Run the application without downloading models:
-
-```bash
-cd NvidiaVoiceAgent
-dotnet run
-```
-
-Mock mode features:
-
-- ✅ Test WebSocket connections
-- ✅ Validate audio encoding/decoding
-- ✅ Develop UI without model inference
-- ✅ Benchmark latency and throughput
-- ⚠️ Returns simulated responses (not real AI)
-
-### Adding Real Models
-
-1. Create `models` directory:
-
-   ```bash
-   mkdir -p NvidiaVoiceAgent/models
-   ```
-
-2. Place ONNX model files:
-
-   ```
-   models/
-   ├── parakeet-tdt-0.6b/
-   │   └── encoder.onnx
-   ├── fastpitch/
-   │   └── model.onnx
-   ├── hifigan/
-   │   └── model.onnx
-   └── phi-3-mini-4k/
-       └── model.onnx
-   ```
-
-3. Update `appsettings.json` paths if needed
-
-4. Restart the server
-
-### Debugging
-
-#### Enable Verbose Logging
-
-```json
-{
-  "Logging": {
-    "LogLevel": {
-      "Default": "Debug",
-      "NvidiaVoiceAgent": "Trace"
-    }
-  }
-}
-```
-
-#### Connect to Log Stream
-
-```bash
-# Using websocat
-websocat ws://localhost:5000/ws/logs
-
-# Using browser console
-const ws = new WebSocket('ws://localhost:5000/ws/logs');
-ws.onmessage = (e) => console.log(JSON.parse(e.data));
-```
-
-#### Verify GPU Acceleration
-
-```bash
-# Check CUDA availability
-nvidia-smi
-
-# Monitor GPU usage during inference
-watch -n 1 nvidia-smi
-```
-
-### Performance Tuning
-
-#### GPU Memory Optimization
-
-```json
-{
-  "ModelConfig": {
-    "Use4BitQuantization": true  // Reduce LLM memory by 4x
-  }
-}
-```
-
-#### Batch Processing (Future)
-
-Currently processes one request at a time. Batching could improve throughput for multiple concurrent users.
-
-## 🧪 Testing
-
-### Test Structure
-
-- **Unit Tests**: Service logic (AudioProcessor, MelSpectrogram)
-- **Integration Tests**: WebSocket handlers, endpoints
-- **End-to-End Tests**: Full pipeline with TestServer
-
-### Run Tests
-
-```bash
-# All tests
-dotnet test
-
-# Specific test class
-dotnet test --filter FullyQualifiedName~AudioProcessorTests
-
-# With code coverage
-dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
-```
-
-### Test Coverage
-
-| Component | Coverage | Tests |
-|-----------|----------|-------|
-| AudioProcessor | 95% | 10 |
-| WebSocket Handlers | 90% | 6 |
-| Health Endpoint | 100% | 5 |
-| Log Broadcaster | 85% | 8 |
-| Config Messages | 100% | 10 |
-| Model Registry | 95% | 11 |
-| Model Download Service | 90% | 7 |
-| Console Progress Reporter | 85% | 6 |
-| Download Progress | 100% | 4 |
-| ModelHub Options | 100% | 4 |
-
-**Total:** 67 tests, all passing ✅
-
-## 🚨 Troubleshooting
-
-### Common Issues
-
-#### 1. "No ASR ONNX model found"
-
-**Symptom:** Application runs but shows mock mode warning
-
-**Solution:**
-
-- Download ONNX models (see Model Acquisition section)
-- Verify `ModelConfig.AsrModelPath` in `appsettings.json`
-- Check file permissions on model directory
-
-#### 2. "CUDA not available, using CPU"
-
-**Symptom:** GPU acceleration not working
-
-**Solution:**
-
-```bash
-# Check NVIDIA driver
-nvidia-smi
-
-# Verify CUDA installation
-nvcc --version
-
-# Ensure Microsoft.ML.OnnxRuntime.Gpu is referenced
-dotnet list package | grep OnnxRuntime.Gpu
-```
-
-#### 3. WebSocket connection fails
-
-**Symptom:** Browser shows "Connection closed" or 400 Bad Request
-
-**Solution:**
-
-- Check firewall settings
-- Verify port 5000 is not in use: `lsof -i :5000`
-- Check browser console for CORS errors
-- Try `ws://localhost:5000/ws/voice` instead of `wss://`
-
-#### 4. Audio quality issues
-
-**Symptom:** Choppy, distorted, or silent audio
-
-**Solution:**
-
-- Verify input audio format: 16kHz, mono, 16-bit PCM WAV
-- Check browser microphone permissions
-- Inspect audio samples in logs (enable Debug level)
-- Test with sample WAV file to isolate issue
-
-#### 5. Out of memory (GPU)
-
-**Symptom:** CUDA out of memory error during inference
-
-**Solution:**
-
-```json
-{
-  "ModelConfig": {
-    "UseGpu": false,  // Fallback to CPU
-    "Use4BitQuantization": true
-  }
-}
-```
-
-Or upgrade GPU, close other GPU applications.
-
-#### 6. Build errors after upgrade
-
-**Symptom:** Package incompatibility or missing dependencies
-
-**Solution:**
-
-```bash
-# Clean and restore
-dotnet clean
-dotnet restore --force
-dotnet build
-```
-
-### Getting Help
-
-- **Issues:** [GitHub Issues](https://github.com/elbruno/nvidia-voiceagent-cs/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/elbruno/nvidia-voiceagent-cs/discussions)
-- **Original Project:** [nvidia-transcribe](https://github.com/elbruno/nvidia-transcribe)
-
-## 📊 Performance Benchmarks
-
-### Latency (per request, mock mode)
-
-| Component | Average | P95 | P99 |
-|-----------|---------|-----|-----|
-| WebSocket Accept | 2ms | 5ms | 10ms |
-| Audio Decode | 5ms | 8ms | 15ms |
-| ASR (Mock) | 10ms | 15ms | 25ms |
-| TTS (Mock) | 8ms | 12ms | 20ms |
-| **Total Pipeline** | **30ms** | **50ms** | **80ms** |
-
-### Throughput (concurrent connections)
-
-- **Single Connection:** ~30 requests/sec (mock mode)
-- **10 Connections:** ~250 requests/sec total
-- **Log Broadcast:** 1000+ clients supported
-
-*Benchmarks with real models vary based on GPU, model size, and audio length.*
-
-## 🤝 Contributing
-
-Contributions are welcome! Please:
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/architecture/overview.md) | Solution structure, project layers, dependency graph |
+| [Implementation Details](docs/guides/implementation-details.md) | Voice pipeline, audio processing, ONNX inference, model loading |
+| [API Reference](docs/api/endpoints.md) | HTTP and WebSocket endpoints with message formats |
+| [Developer Guide](docs/guides/developer-guide.md) | Coding conventions, adding services, testing patterns |
+| [Troubleshooting](docs/guides/troubleshooting.md) | Common issues and solutions |
+
+## Contributing
 
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit your changes: `git commit -m 'Add amazing feature'`
-4. Push to the branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Commit changes and open a Pull Request
 
-### Coding Standards
+See the [Developer Guide](docs/guides/developer-guide.md) for coding standards.
 
-- Follow C# naming conventions (PascalCase for public members)
-- **One class per file** - each class, interface, enum, or record in its own file
-- Use nullable reference types (`#nullable enable`)
-- Add XML documentation for public APIs
-- Write unit tests for new services
-- Keep services focused and single-purpose
+## License
 
-## 📄 License
+MIT License — see [LICENSE](LICENSE) for details.
 
-MIT License - see [LICENSE](LICENSE) file for details
+## Credits
 
-## 🙏 Credits
-
-- **Original Implementation:** [nvidia-transcribe](https://github.com/elbruno/nvidia-transcribe) (Python)
-- **NVIDIA NIM Models:** Parakeet, FastPitch, HiFiGAN
-- **Microsoft:** ONNX Runtime, ASP.NET Core
-- **Community Libraries:** NAudio, TorchSharp, Serilog
-
-## 📚 Additional Resources
-
-- [ONNX Runtime Documentation](https://onnxruntime.ai/docs/)
-- [NVIDIA NIM Catalog](https://catalog.ngc.nvidia.com/)
-- [ASP.NET Core WebSockets](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/websockets)
-- [NAudio Documentation](https://github.com/naudio/NAudio)
-
----
-
-**Built with ❤️ using .NET 10 and NVIDIA NIM**
+- **Original**: [nvidia-transcribe](https://github.com/elbruno/nvidia-transcribe) (Python)
+- **Models**: NVIDIA Parakeet, FastPitch, HiFiGAN
+- **Runtime**: [ONNX Runtime](https://onnxruntime.ai/), [ASP.NET Core](https://learn.microsoft.com/en-us/aspnet/core/)

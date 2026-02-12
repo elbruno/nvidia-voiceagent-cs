@@ -1,8 +1,8 @@
 using System.Text;
 using FluentAssertions;
-using NvidiaVoiceAgent.Services;
+using NvidiaVoiceAgent.Core.Services;
 
-namespace NvidiaVoiceAgent.Tests;
+namespace NvidiaVoiceAgent.Core.Tests;
 
 /// <summary>
 /// Tests for IAudioProcessor implementation.

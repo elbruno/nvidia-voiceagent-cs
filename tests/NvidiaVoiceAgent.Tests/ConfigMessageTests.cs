@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FluentAssertions;
+using NvidiaVoiceAgent.Core.Models;
 using NvidiaVoiceAgent.Models;
 
 namespace NvidiaVoiceAgent.Tests;

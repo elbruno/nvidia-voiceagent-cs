@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
+using Microsoft.Extensions.Logging;
 
-namespace NvidiaVoiceAgent.Services;
+namespace NvidiaVoiceAgent.Core.Services;
 
 /// <summary>
 /// Audio processing service for WAV format handling.
@@ -121,7 +122,7 @@ public class AudioProcessor : IAudioProcessor
             samples[i] = sample;
         }
 
-        _logger.LogDebug("Decoded {Samples} PCM samples ({BitsPerSample}-bit, {Channels} channel)", 
+        _logger.LogDebug("Decoded {Samples} PCM samples ({BitsPerSample}-bit, {Channels} channel)",
             numSamples, bitsPerSample, numChannels);
         return samples;
     }

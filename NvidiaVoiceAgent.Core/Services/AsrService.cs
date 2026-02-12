@@ -2,10 +2,10 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
-using NvidiaVoiceAgent.Models;
+using NvidiaVoiceAgent.Core.Models;
 using NvidiaVoiceAgent.ModelHub;
 
-namespace NvidiaVoiceAgent.Services;
+namespace NvidiaVoiceAgent.Core.Services;
 
 /// <summary>
 /// ASR service using ONNX Runtime for Parakeet-TDT-0.6B-V2 or compatible models.
@@ -115,7 +115,7 @@ public class AsrService : IAsrService, IDisposable
         var basePath = _config.AsrModelPath;
 
         // Try various common ONNX model filenames
-        string[] possibleNames = 
+        string[] possibleNames =
         {
             "encoder.onnx",
             "model.onnx",
@@ -193,7 +193,7 @@ public class AsrService : IAsrService, IDisposable
 
         // CPU is always the fallback
         options.AppendExecutionProvider_CPU(0);
-        
+
         // Optimize for inference
         options.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
         options.EnableMemoryPattern = true;
@@ -263,7 +263,7 @@ public class AsrService : IAsrService, IDisposable
     }
 
     private IReadOnlyCollection<NamedOnnxValue> CreateModelInputs(
-        DenseTensor<float> inputTensor, 
+        DenseTensor<float> inputTensor,
         DenseTensor<long> lengthTensor,
         int numFrames)
     {
@@ -302,7 +302,7 @@ public class AsrService : IAsrService, IDisposable
     {
         // Get the output tensor
         var output = results.First();
-        
+
         if (output.Value is not Tensor<float> outputTensor)
         {
             // Try other output types
@@ -314,7 +314,7 @@ public class AsrService : IAsrService, IDisposable
             {
                 return DecodeTokenIds(intTokenIds.ToArray().Select(x => (long)x).ToArray());
             }
-            
+
             _logger.LogWarning("Unexpected output type: {Type}", output.Value?.GetType().Name ?? "null");
             return "[Unknown output format]";
         }
@@ -326,10 +326,10 @@ public class AsrService : IAsrService, IDisposable
     private string GreedyCtcDecode(Tensor<float> logprobs)
     {
         var dims = logprobs.Dimensions.ToArray();
-        
+
         // Typical shape: [batch, time, vocab] or [time, vocab]
         int timeSteps, vocabSize;
-        
+
         if (dims.Length == 3)
         {
             timeSteps = dims[1];
@@ -358,8 +358,8 @@ public class AsrService : IAsrService, IDisposable
 
             for (int v = 0; v < vocabSize; v++)
             {
-                float val = dims.Length == 3 
-                    ? logprobs[0, t, v] 
+                float val = dims.Length == 3
+                    ? logprobs[0, t, v]
                     : logprobs[t, v];
 
                 if (val > maxVal)
@@ -409,7 +409,7 @@ public class AsrService : IAsrService, IDisposable
     {
         // Generate a mock transcript based on audio length
         var duration = audioSamples.Length / 16000.0; // 16kHz
-        
+
         if (duration < 0.5)
         {
             return string.Empty;
@@ -428,7 +428,7 @@ public class AsrService : IAsrService, IDisposable
         var transcript = mockResponses[index];
 
         _logger.LogDebug(
-            "Mock ASR: {Duration:F2}s audio -> '{Transcript}'", 
+            "Mock ASR: {Duration:F2}s audio -> '{Transcript}'",
             duration, transcript);
 
         return transcript;

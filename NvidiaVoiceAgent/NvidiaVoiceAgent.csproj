@@ -10,12 +10,6 @@
     <!-- ASP.NET Core -->
     <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
     
-    <!-- ML/AI Model Inference -->
-    <PackageReference Include="TorchSharp" Version="0.102.6" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.20.1" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.20.1" />
-    
     <!-- Audio Processing -->
     <PackageReference Include="NAudio" Version="2.2.1" />
     
@@ -24,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\NvidiaVoiceAgent.Core\NvidiaVoiceAgent.Core.csproj" />
     <ProjectReference Include="..\NvidiaVoiceAgent.ModelHub\NvidiaVoiceAgent.ModelHub.csproj" />
   </ItemGroup>
 

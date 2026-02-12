@@ -1,8 +1,10 @@
 <Solution>
   <Project Path="NvidiaVoiceAgent/NvidiaVoiceAgent.csproj" />
+  <Project Path="NvidiaVoiceAgent.Core/NvidiaVoiceAgent.Core.csproj" />
   <Project Path="NvidiaVoiceAgent.ModelHub/NvidiaVoiceAgent.ModelHub.csproj" />
   <Folder Name="/tests/">
     <Project Path="tests/NvidiaVoiceAgent.Tests/NvidiaVoiceAgent.Tests.csproj" />
     <Project Path="tests/NvidiaVoiceAgent.ModelHub.Tests/NvidiaVoiceAgent.ModelHub.Tests.csproj" />
+    <Project Path="tests/NvidiaVoiceAgent.Core.Tests/NvidiaVoiceAgent.Core.Tests.csproj" />
   </Folder>
 </Solution>

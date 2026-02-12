@@ -1,4 +1,4 @@
-namespace NvidiaVoiceAgent.Services;
+namespace NvidiaVoiceAgent.Core.Services;
 
 /// <summary>
 /// Text-to-Speech service interface.

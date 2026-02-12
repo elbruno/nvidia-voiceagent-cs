@@ -187,7 +187,9 @@
             background: #141414;
             border-radius: 8px;
             border: 1px solid #222;
+            cursor: pointer;
         }
+        .model-status:hover { background: #1a1a1a; }
         .model-status .dot {
             width: 8px;
             height: 8px;
@@ -198,6 +200,154 @@
         .model-status .dot.loading { background: #ffb74d; animation: blink 1s infinite; }
         .model-status .dot.missing { background: #ef5350; }
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        /* Models Panel */
+        .models-panel {
+            width: 100%;
+            background: #0d0d0d;
+            border-bottom: 2px solid #333;
+            flex-shrink: 0;
+            display: none;
+        }
+        .models-panel.visible { display: block; }
+        .models-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.5rem 1rem;
+            background: #141414;
+        }
+        .models-panel-header h2 {
+            font-size: 0.8rem;
+            color: #76b900;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        .models-panel-close {
+            background: #222;
+            color: #888;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 0.1rem 0.5rem;
+            font-size: 0.7rem;
+            cursor: pointer;
+        }
+        .models-panel-close:hover { background: #333; color: #fff; }
+        .models-panel-body {
+            padding: 0.5rem 1rem;
+        }
+        .model-card {
+            background: #141414;
+            border: 1px solid #222;
+            border-radius: 8px;
+            padding: 0.6rem 0.8rem;
+            margin-bottom: 0.4rem;
+        }
+        .model-card:last-child { margin-bottom: 0; }
+        .model-card-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+        .model-card-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .model-card-name {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #e0e0e0;
+        }
+        .model-card-name .model-type-badge {
+            display: inline-block;
+            background: #1a1a2e;
+            color: #7b7bff;
+            font-size: 0.6rem;
+            font-weight: 700;
+            padding: 0.1rem 0.35rem;
+            border-radius: 4px;
+            margin-left: 0.4rem;
+            text-transform: uppercase;
+            vertical-align: middle;
+        }
+        .model-card-meta {
+            font-size: 0.68rem;
+            color: #666;
+            margin-top: 0.2rem;
+            line-height: 1.4;
+        }
+        .model-card-meta a {
+            color: #4fc3f7;
+            text-decoration: none;
+        }
+        .model-card-meta a:hover { text-decoration: underline; }
+        .model-card-path {
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.65rem;
+            color: #76b900;
+            background: #0a0a0a;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            margin-top: 0.25rem;
+            word-break: break-all;
+            display: none;
+        }
+        .model-card-path.visible { display: block; }
+        .model-card-status {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .model-card-status .status-badge {
+            font-size: 0.68rem;
+            font-weight: 600;
+            padding: 0.15rem 0.5rem;
+            border-radius: 10px;
+            white-space: nowrap;
+        }
+        .status-badge.downloaded {
+            color: #76b900;
+            border: 1px solid #76b900;
+            background: rgba(118, 185, 0, 0.1);
+        }
+        .status-badge.not-downloaded {
+            color: #ef5350;
+            border: 1px solid #ef5350;
+            background: rgba(239, 83, 80, 0.1);
+        }
+        .status-badge.downloading {
+            color: #ffb74d;
+            border: 1px solid #ffb74d;
+            background: rgba(255, 183, 77, 0.1);
+        }
+        .model-card-progress {
+            margin-top: 0.35rem;
+            display: none;
+        }
+        .model-card-progress.visible { display: block; }
+        .progress-bar-bg {
+            width: 100%;
+            height: 6px;
+            background: #222;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #76b900, #8fd400);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        .progress-text {
+            font-size: 0.62rem;
+            color: #888;
+            margin-top: 0.15rem;
+            text-align: right;
+        }
         .clear-chat-btn {
             background: #333;
             color: #aaa;
@@ -365,6 +515,16 @@
         </div>
     </div>
 
+    <div class="models-panel" id="modelsPanel">
+        <div class="models-panel-header">
+            <h2>🧠 Models</h2>
+            <button class="models-panel-close" id="modelsPanelClose">✕ Close</button>
+        </div>
+        <div class="models-panel-body" id="modelsPanelBody">
+            <div style="color:#666;font-size:0.75rem;padding:0.5rem 0;">Loading model info…</div>
+        </div>
+    </div>
+
     <div class="container">
         <div class="chat-box" id="chatBox"></div>
         <div class="controls">
@@ -401,6 +561,9 @@
         const modelStatusEl = document.getElementById('modelStatus');
         const modelDot = document.getElementById('modelDot');
         const modelStatusText = document.getElementById('modelStatusText');
+        const modelsPanel = document.getElementById('modelsPanel');
+        const modelsPanelBody = document.getElementById('modelsPanelBody');
+        const modelsPanelClose = document.getElementById('modelsPanelClose');
 
         let ws = null;
         let logWs = null;
@@ -408,6 +571,7 @@
         let logCount = 0;
         let logCollapsed = false;
         let smartMode = false;
+        let modelsData = []; // cached model data from API
 
         clearChatBtn.addEventListener('click', () => {
             chatBox.innerHTML = '';
@@ -512,34 +676,145 @@
 
         connectLogs();
 
+        // --- Models Panel ---
+        modelStatusEl.addEventListener('click', () => {
+            modelsPanel.classList.toggle('visible');
+            if (modelsPanel.classList.contains('visible')) fetchModels();
+        });
+        modelsPanelClose.addEventListener('click', () => {
+            modelsPanel.classList.remove('visible');
+        });
+
+        async function fetchModels() {
+            try {
+                const resp = await fetch('/api/models');
+                modelsData = await resp.json();
+                renderModelsPanel();
+            } catch (e) {
+                modelsPanelBody.innerHTML = '<div style="color:#ef5350;font-size:0.75rem;padding:0.5rem 0;">Failed to load model info.</div>';
+            }
+        }
+
+        function renderModelsPanel() {
+            modelsPanelBody.innerHTML = '';
+            if (!modelsData.length) {
+                modelsPanelBody.innerHTML = '<div style="color:#666;font-size:0.75rem;padding:0.5rem 0;">No models registered.</div>';
+                return;
+            }
+            modelsData.forEach((m, idx) => {
+                const card = document.createElement('div');
+                card.className = 'model-card';
+                card.id = `model-card-${idx}`;
+
+                const statusClass = m.status === 'downloaded' ? 'downloaded'
+                    : m.status === 'downloading' ? 'downloading'
+                    : 'not-downloaded';
+                const statusLabel = m.status === 'downloaded' ? '✅ Downloaded'
+                    : m.status === 'downloading' ? '📥 Downloading'
+                    : '❌ Not Downloaded';
+                const sizeMb = m.expected_size_mb.toFixed(1);
+
+                card.innerHTML = `
+                    <div class="model-card-row">
+                        <div class="model-card-info">
+                            <div class="model-card-name">${esc(m.name)} <span class="model-type-badge">${esc(m.type)}</span></div>
+                            <div class="model-card-meta">
+                                <a href="https://huggingface.co/${esc(m.repo_id)}" target="_blank" rel="noopener">${esc(m.repo_id)}</a>
+                                &nbsp;·&nbsp;${sizeMb} MB${m.is_required ? ' · <strong>required</strong>' : ''}
+                            </div>
+                        </div>
+                        <div class="model-card-status">
+                            <span class="status-badge ${statusClass}" id="model-badge-${idx}">${statusLabel}</span>
+                        </div>
+                    </div>
+                    <div class="model-card-path ${m.local_path ? 'visible' : ''}" id="model-path-${idx}">${m.local_path ? esc(m.local_path) : ''}</div>
+                    <div class="model-card-progress" id="model-progress-${idx}">
+                        <div class="progress-bar-bg"><div class="progress-bar-fill" id="model-bar-${idx}"></div></div>
+                        <div class="progress-text" id="model-pct-${idx}"></div>
+                    </div>
+                `;
+                modelsPanelBody.appendChild(card);
+            });
+        }
+
+        function esc(s) {
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
         function updateModelStatusFromLog(msg) {
             if (!msg) return;
-            // Match download progress messages from WebProgressReporter
-            const progressMatch = msg.match(/Downloading .+?:\s*([\d.]+)%/);
+            // Match download progress: "Downloading Parakeet-TDT-0.6B-V2: 45.0% (1200.0/2541.7 MB)"
+            const progressMatch = msg.match(/Downloading (.+?):\s*([\d.]+)%\s*\(([\d.]+)\/([\d.]+)\s*MB\)/);
             if (progressMatch) {
+                const modelName = progressMatch[1];
+                const pct = parseFloat(progressMatch[2]);
+                const dlMb = progressMatch[3];
+                const totalMb = progressMatch[4];
+                // Update top-bar indicator
                 modelDot.className = 'dot loading';
-                modelStatusText.textContent = `Downloading ASR… ${parseFloat(progressMatch[1]).toFixed(0)}%`;
+                modelStatusText.textContent = `Downloading… ${pct.toFixed(0)}%`;
+                // Update card in panel
+                updateModelCard(modelName, 'downloading', pct, `${dlMb} / ${totalMb} MB`);
                 return;
             }
             if (msg.includes('Download started:')) {
                 modelDot.className = 'dot loading';
-                modelStatusText.textContent = 'Downloading ASR model…';
+                modelStatusText.textContent = 'Downloading model…';
+                const name = msg.replace(/.*Download started:\s*/, '').replace(/\s*\(.*/, '');
+                updateModelCard(name, 'downloading', 0, 'Starting…');
                 return;
             }
             if (msg.includes('Download complete:')) {
                 modelDot.className = 'dot ready';
-                modelStatusText.textContent = 'ASR model downloaded';
+                modelStatusText.textContent = 'Models downloaded';
+                const name = msg.replace(/.*Download complete:\s*/, '').trim();
+                updateModelCard(name, 'downloaded', 100, '');
+                // Refresh full data to get path
+                fetchModels();
                 return;
             }
             if (msg.includes('Download failed:')) {
                 modelDot.className = 'dot missing';
-                modelStatusText.textContent = 'ASR download failed';
+                modelStatusText.textContent = 'Download failed';
+                const name = msg.replace(/.*Download failed:\s*/, '').trim();
+                updateModelCard(name, 'not_downloaded', 0, 'Failed');
                 return;
             }
             if (msg.includes('Model already downloaded:')) {
                 modelDot.className = 'dot ready';
-                modelStatusText.textContent = 'ASR model downloaded';
+                modelStatusText.textContent = 'Models downloaded';
                 return;
+            }
+        }
+
+        function updateModelCard(modelName, status, pct, progressText) {
+            const idx = modelsData.findIndex(m => m.name === modelName);
+            if (idx < 0) return;
+
+            const badge = document.getElementById(`model-badge-${idx}`);
+            const progressEl = document.getElementById(`model-progress-${idx}`);
+            const bar = document.getElementById(`model-bar-${idx}`);
+            const pctEl = document.getElementById(`model-pct-${idx}`);
+            if (!badge) return;
+
+            if (status === 'downloading') {
+                badge.className = 'status-badge downloading';
+                badge.textContent = `📥 ${pct.toFixed(0)}%`;
+                if (progressEl) {
+                    progressEl.classList.add('visible');
+                    bar.style.width = `${pct}%`;
+                    pctEl.textContent = progressText;
+                }
+            } else if (status === 'downloaded') {
+                badge.className = 'status-badge downloaded';
+                badge.textContent = '✅ Downloaded';
+                if (progressEl) progressEl.classList.remove('visible');
+            } else {
+                badge.className = 'status-badge not-downloaded';
+                badge.textContent = '❌ Not Downloaded';
+                if (progressEl) progressEl.classList.remove('visible');
             }
         }
 
@@ -553,16 +828,15 @@
                 if (asrLoaded) {
                     modelDot.className = 'dot ready';
                     modelStatusText.textContent = 'ASR model ready';
-                    clientLog('✅ ASR model loaded and ready');
                 } else if (asrDownloaded) {
                     modelDot.className = 'dot ready';
-                    modelStatusText.textContent = 'ASR model downloaded';
-                    clientLog('✅ ASR model files downloaded (loads on first use)');
+                    modelStatusText.textContent = 'Models downloaded';
                 } else {
                     modelDot.className = 'dot missing';
-                    modelStatusText.textContent = 'ASR model not available';
-                    clientLog('⚠️ ASR model not downloaded');
+                    modelStatusText.textContent = 'Models not available';
                 }
+                // Pre-fetch models data
+                fetchModels();
             } catch (e) {
                 modelDot.className = 'dot missing';
                 modelStatusText.textContent = 'Status unavailable';

@@ -1,3 +1,6 @@
+using NvidiaVoiceAgent.Core;
+using NvidiaVoiceAgent.Core.Models;
+using NvidiaVoiceAgent.Core.Services;
 using NvidiaVoiceAgent.Hubs;
 using NvidiaVoiceAgent.Models;
 using NvidiaVoiceAgent.ModelHub;
@@ -19,9 +22,11 @@ builder.Services.AddModelHub(options =>
     options.HuggingFaceToken = section.GetValue<string?>("HuggingFaceToken", null);
 });
 
+// Register core voice agent services (ASR, AudioProcessor) from NvidiaVoiceAgent.Core
+builder.Services.AddVoiceAgentCore();
+
 // Register services
 builder.Services.AddSingleton<ILogBroadcaster, LogBroadcaster>();
-builder.Services.AddSingleton<IAudioProcessor, AudioProcessor>();
 
 // Override the default ConsoleProgressReporter with WebProgressReporter
 // to broadcast download progress to WebSocket clients
@@ -31,8 +36,6 @@ builder.Services.AddSingleton<IProgressReporter, WebProgressReporter>();
 builder.Services.AddSingleton<VoiceWebSocketHandler>();
 builder.Services.AddSingleton<LogsWebSocketHandler>();
 
-// Register AI services
-builder.Services.AddSingleton<IAsrService, AsrService>();
 // TODO: Register remaining AI services when implementations are ready
 // builder.Services.AddSingleton<ITtsService, TtsService>();
 // builder.Services.AddSingleton<ILlmService, LlmService>();
@@ -69,6 +72,28 @@ app.MapGet("/health", (IAsrService asrService, IModelDownloadService modelDownlo
     TtsLoaded = false,  // TODO: Check actual service status
     LlmLoaded = false,
     Timestamp = DateTime.UtcNow
+});
+
+// Models status endpoint - returns detailed info for each registered model
+app.MapGet("/api/models", (IModelRegistry registry, IModelDownloadService modelDownload) =>
+{
+    var models = registry.GetAllModels();
+    var results = models.Select(m =>
+    {
+        var isAvailable = modelDownload.IsModelAvailable(m.Type);
+        var localPath = modelDownload.GetModelPath(m.Type);
+        return new ModelStatusResponse
+        {
+            Name = m.Name,
+            Type = m.Type.ToString(),
+            Status = isAvailable ? "downloaded" : "not_downloaded",
+            RepoId = m.RepoId,
+            LocalPath = localPath != null ? Path.GetFullPath(localPath) : null,
+            ExpectedSizeMb = m.ExpectedSizeBytes / (1024.0 * 1024.0),
+            IsRequired = m.IsRequired
+        };
+    }).ToList();
+    return results;
 });
 
 // WebSocket endpoint for voice processing

@@ -1,6 +1,6 @@
 using System;
 
-namespace NvidiaVoiceAgent.Services;
+namespace NvidiaVoiceAgent.Core.Services;
 
 /// <summary>
 /// Extracts mel-spectrogram features from audio for ASR models.
@@ -214,7 +214,7 @@ public class MelSpectrogramExtractor
     private static void ComputeRealFFT(float[] input, float[] real, float[] imag)
     {
         int n = input.Length;
-        
+
         // Bit-reversal permutation
         for (int i = 0; i < n; i++)
         {

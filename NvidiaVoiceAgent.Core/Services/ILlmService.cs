@@ -1,4 +1,4 @@
-namespace NvidiaVoiceAgent.Services;
+namespace NvidiaVoiceAgent.Core.Services;
 
 /// <summary>
 /// Language Model service interface for Smart Mode.
