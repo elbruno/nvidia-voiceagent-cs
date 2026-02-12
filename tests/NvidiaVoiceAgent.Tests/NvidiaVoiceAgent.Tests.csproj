@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\NvidiaVoiceAgent\NvidiaVoiceAgent.csproj" />
+    <ProjectReference Include="..\..\NvidiaVoiceAgent\NvidiaVoiceAgent.csproj" />
   </ItemGroup>
 
 </Project>

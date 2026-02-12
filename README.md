@@ -82,13 +82,13 @@ dotnet build
 ### Run the Application
 
 ```bash
-cd src/NvidiaVoiceAgent
+cd NvidiaVoiceAgent
 dotnet run
 ```
 
-The application will start on **http://localhost:5000** (or the port configured in your environment).
+The application will start on **<http://localhost:5000>** (or the port configured in your environment).
 
-Open http://localhost:5000 in your browser to access the voice interface.
+Open <http://localhost:5000> in your browser to access the voice interface.
 
 ### Run Tests
 
@@ -162,6 +162,7 @@ export Logging__LogLevel__Default="Debug"
 | `/` | GET | Serve web UI | HTML |
 
 **Health Check Response:**
+
 ```json
 {
   "status": "healthy",
@@ -185,6 +186,7 @@ export Logging__LogLevel__Default="Debug"
    - Encoding: WAV with RIFF header
 
 2. **Configuration** (Text JSON)
+
    ```json
    {
      "type": "config",
@@ -194,6 +196,7 @@ export Logging__LogLevel__Default="Debug"
    ```
 
 3. **Clear History** (Text JSON)
+
    ```json
    {
      "type": "clear_history"
@@ -203,6 +206,7 @@ export Logging__LogLevel__Default="Debug"
 **Receive Messages:**
 
 1. **Transcript Response**
+
    ```json
    {
      "type": "transcript",
@@ -211,6 +215,7 @@ export Logging__LogLevel__Default="Debug"
    ```
 
 2. **Thinking Indicator** (Smart Mode only)
+
    ```json
    {
      "type": "thinking"
@@ -218,6 +223,7 @@ export Logging__LogLevel__Default="Debug"
    ```
 
 3. **Voice Response** (All-in-One)
+
    ```json
    {
      "type": "voice",
@@ -232,6 +238,7 @@ export Logging__LogLevel__Default="Debug"
 **Connection:** `ws://localhost:5000/ws/logs`
 
 **Receive Messages:**
+
 ```json
 {
   "timestamp": "2026-02-12T12:00:00Z",
@@ -244,28 +251,27 @@ export Logging__LogLevel__Default="Debug"
 
 ```
 nvidia-voiceagent-cs/
-├── src/
-│   └── NvidiaVoiceAgent/
-│       ├── Hubs/                        # WebSocket handlers
-│       │   ├── VoiceWebSocketHandler.cs # Voice processing pipeline
-│       │   └── LogsWebSocketHandler.cs  # Log streaming
-│       ├── Services/                    # Core business logic
-│       │   ├── AsrService.cs           # Speech-to-text (ONNX)
-│       │   ├── AudioProcessor.cs       # WAV codec, resampling
-│       │   ├── MelSpectrogramExtractor.cs # Audio feature extraction
-│       │   ├── LogBroadcaster.cs       # Multi-client log distribution
-│       │   ├── IAsrService.cs          # ASR interface
-│       │   ├── ITtsService.cs          # TTS interface (TODO)
-│       │   └── ILlmService.cs          # LLM interface (TODO)
-│       ├── Models/                      # DTOs and configuration
-│       │   └── VoiceModels.cs          # Request/response models
-│       ├── wwwroot/                     # Static web UI
-│       │   ├── index.html
-│       │   ├── style.css
-│       │   └── app.js
-│       ├── Program.cs                   # Application entry point
-│       ├── appsettings.json            # Configuration
-│       └── NvidiaVoiceAgent.csproj     # Project file
+├── NvidiaVoiceAgent/
+│   ├── Hubs/                        # WebSocket handlers
+│   │   ├── VoiceWebSocketHandler.cs # Voice processing pipeline
+│   │   └── LogsWebSocketHandler.cs  # Log streaming
+│   ├── Services/                    # Core business logic
+│   │   ├── AsrService.cs           # Speech-to-text (ONNX)
+│   │   ├── AudioProcessor.cs       # WAV codec, resampling
+│   │   ├── MelSpectrogramExtractor.cs # Audio feature extraction
+│   │   ├── LogBroadcaster.cs       # Multi-client log distribution
+│   │   ├── IAsrService.cs          # ASR interface
+│   │   ├── ITtsService.cs          # TTS interface (TODO)
+│   │   └── ILlmService.cs          # LLM interface (TODO)
+│   ├── Models/                      # DTOs and configuration
+│   │   └── VoiceModels.cs          # Request/response models
+│   ├── wwwroot/                     # Static web UI
+│   │   ├── index.html
+│   │   ├── style.css
+│   │   └── app.js
+│   ├── Program.cs                   # Application entry point
+│   ├── appsettings.json            # Configuration
+│   └── NvidiaVoiceAgent.csproj     # Project file
 ├── tests/
 │   └── NvidiaVoiceAgent.Tests/
 │       ├── HealthEndpointTests.cs      # Health endpoint tests
@@ -274,6 +280,8 @@ nvidia-voiceagent-cs/
 │       ├── ConfigMessageTests.cs       # Message parsing tests
 │       ├── LogBroadcasterTests.cs      # Log broadcasting tests
 │       └── WebApplicationFactoryFixture.cs
+├── docs/
+│   └── plans/                      # Project plans and proposals
 └── README.md
 ```
 
@@ -294,11 +302,13 @@ nvidia-voiceagent-cs/
 ### Model Acquisition
 
 #### Option 1: NVIDIA NIM
+
 1. Sign up for NVIDIA NGC account
 2. Download models from NVIDIA NIM catalog
 3. Convert to ONNX format if needed
 
 #### Option 2: Hugging Face
+
 ```bash
 # Example: Download Parakeet model
 huggingface-cli download nvidia/parakeet-tdt-0.6b --local-dir models/parakeet-tdt-0.6b
@@ -308,7 +318,9 @@ python convert_to_onnx.py --model models/parakeet-tdt-0.6b
 ```
 
 #### Option 3: Use Mock Mode
+
 The application includes **Mock Mode** for development without models:
+
 - ASR returns simulated transcripts based on audio duration
 - TTS returns silent WAV files
 - Allows UI/WebSocket testing without downloading 3GB+ of models
@@ -316,6 +328,7 @@ The application includes **Mock Mode** for development without models:
 ### Model Loading
 
 The application automatically searches for model files:
+
 1. Checks configured path in `appsettings.json`
 2. Tries common filenames: `encoder.onnx`, `model.onnx`, `{name}.onnx`
 3. Recursively searches subdirectories for `.onnx` files
@@ -326,12 +339,14 @@ The application automatically searches for model files:
 ### Mock Mode (No Models Required)
 
 Run the application without downloading models:
+
 ```bash
-cd src/NvidiaVoiceAgent
+cd NvidiaVoiceAgent
 dotnet run
 ```
 
 Mock mode features:
+
 - ✅ Test WebSocket connections
 - ✅ Validate audio encoding/decoding
 - ✅ Develop UI without model inference
@@ -341,11 +356,13 @@ Mock mode features:
 ### Adding Real Models
 
 1. Create `models` directory:
+
    ```bash
-   mkdir -p src/NvidiaVoiceAgent/models
+   mkdir -p NvidiaVoiceAgent/models
    ```
 
 2. Place ONNX model files:
+
    ```
    models/
    ├── parakeet-tdt-0.6b/
@@ -365,6 +382,7 @@ Mock mode features:
 ### Debugging
 
 #### Enable Verbose Logging
+
 ```json
 {
   "Logging": {
@@ -377,6 +395,7 @@ Mock mode features:
 ```
 
 #### Connect to Log Stream
+
 ```bash
 # Using websocat
 websocat ws://localhost:5000/ws/logs
@@ -387,6 +406,7 @@ ws.onmessage = (e) => console.log(JSON.parse(e.data));
 ```
 
 #### Verify GPU Acceleration
+
 ```bash
 # Check CUDA availability
 nvidia-smi
@@ -398,6 +418,7 @@ watch -n 1 nvidia-smi
 ### Performance Tuning
 
 #### GPU Memory Optimization
+
 ```json
 {
   "ModelConfig": {
@@ -407,6 +428,7 @@ watch -n 1 nvidia-smi
 ```
 
 #### Batch Processing (Future)
+
 Currently processes one request at a time. Batching could improve throughput for multiple concurrent users.
 
 ## 🧪 Testing
@@ -447,17 +469,21 @@ dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
 ### Common Issues
 
 #### 1. "No ASR ONNX model found"
+
 **Symptom:** Application runs but shows mock mode warning
 
 **Solution:**
+
 - Download ONNX models (see Model Acquisition section)
 - Verify `ModelConfig.AsrModelPath` in `appsettings.json`
 - Check file permissions on model directory
 
 #### 2. "CUDA not available, using CPU"
+
 **Symptom:** GPU acceleration not working
 
 **Solution:**
+
 ```bash
 # Check NVIDIA driver
 nvidia-smi
@@ -470,27 +496,33 @@ dotnet list package | grep OnnxRuntime.Gpu
 ```
 
 #### 3. WebSocket connection fails
+
 **Symptom:** Browser shows "Connection closed" or 400 Bad Request
 
 **Solution:**
+
 - Check firewall settings
 - Verify port 5000 is not in use: `lsof -i :5000`
 - Check browser console for CORS errors
 - Try `ws://localhost:5000/ws/voice` instead of `wss://`
 
 #### 4. Audio quality issues
+
 **Symptom:** Choppy, distorted, or silent audio
 
 **Solution:**
+
 - Verify input audio format: 16kHz, mono, 16-bit PCM WAV
 - Check browser microphone permissions
 - Inspect audio samples in logs (enable Debug level)
 - Test with sample WAV file to isolate issue
 
 #### 5. Out of memory (GPU)
+
 **Symptom:** CUDA out of memory error during inference
 
 **Solution:**
+
 ```json
 {
   "ModelConfig": {
@@ -499,12 +531,15 @@ dotnet list package | grep OnnxRuntime.Gpu
   }
 }
 ```
+
 Or upgrade GPU, close other GPU applications.
 
 #### 6. Build errors after upgrade
+
 **Symptom:** Package incompatibility or missing dependencies
 
 **Solution:**
+
 ```bash
 # Clean and restore
 dotnet clean

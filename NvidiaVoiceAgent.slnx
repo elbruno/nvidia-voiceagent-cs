@@ -1,7 +1,5 @@
 <Solution>
-  <Folder Name="/src/">
-    <Project Path="src/NvidiaVoiceAgent/NvidiaVoiceAgent.csproj" />
-  </Folder>
+  <Project Path="NvidiaVoiceAgent/NvidiaVoiceAgent.csproj" />
   <Folder Name="/tests/">
     <Project Path="tests/NvidiaVoiceAgent.Tests/NvidiaVoiceAgent.Tests.csproj" />
   </Folder>

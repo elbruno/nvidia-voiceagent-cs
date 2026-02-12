@@ -4,6 +4,36 @@
 
 This is a production-ready, real-time voice agent built with **ASP.NET Core 10** that performs Speech-to-Text (ASR), LLM processing, and Text-to-Speech (TTS) using NVIDIA NIM models via ONNX Runtime. The application uses WebSocket for bi-directional audio streaming and supports both GPU and CPU inference.
 
+## Repository Documentation Guidelines
+
+### Root-Level Files
+Only the following files should exist at the repository root:
+- `README.md` - Main project documentation
+- `LICENSE` - Project license file
+- Code files and solution files (`.slnx`, `.csproj`, `.cs`, etc.)
+- Configuration files (`.gitignore`, `.gitattributes`, `.editorconfig`)
+
+### Documentation Folder Structure
+All additional documentation must be stored in the `docs/` folder:
+```
+docs/
+├── plans/           # Project plans and proposals
+├── architecture/    # Architecture decision records (ADRs)
+├── api/            # API documentation
+└── guides/         # Developer guides and tutorials
+```
+
+### Plan Files Naming Convention
+All plan files must be saved in `docs/plans/` with the following naming format:
+```
+plan_YYMMDD_HHMM.md
+```
+Where:
+- `YYMMDD` - Date the plan was created (e.g., `260212` for Feb 12, 2026)
+- `HHMM` - Time the plan was created in 24-hour format (e.g., `0930` for 9:30 AM)
+
+**Example:** `plan_260212_0930.md` for a plan created on February 12, 2026 at 9:30 AM
+
 ## Technology Stack
 
 - **.NET 10.0** - Latest .NET framework
@@ -99,7 +129,7 @@ if (modelPath == null)
 ### File Organization
 
 ```
-src/NvidiaVoiceAgent/
+NvidiaVoiceAgent/
 ├── Hubs/           # WebSocket handlers only
 ├── Services/       # Business logic, interfaces first
 ├── Models/         # DTOs, configuration models
