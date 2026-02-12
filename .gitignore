@@ -45,6 +45,7 @@ TestResult.xml
 
 # Downloaded models directory
 models/
+model-cache/
 
 # Local env files
 .env
