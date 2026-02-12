@@ -49,31 +49,32 @@ public class ModelRegistryTests
     }
 
     [Fact]
-    public void GetModel_Asr_WithInt8_ReturnsInt8Model()
+    public void GetModel_Asr_ReturnsEncoderOnnxModel()
     {
-        // Arrange
-        var registry = new ModelRegistry(CreateOptions(o => o.UseInt8Quantization = true));
+        // Arrange - Note: The HuggingFace repo only has the standard encoder.onnx
+        // (no int8 quantized variant available)
+        var registry = new ModelRegistry(CreateOptions());
 
         // Act
         var model = registry.GetModel(ModelType.Asr);
 
         // Assert
         model.Should().NotBeNull();
-        model!.Filename.Should().Contain("int8");
+        model!.Filename.Should().Be("onnx/encoder.onnx");
     }
 
     [Fact]
-    public void GetModel_Asr_WithoutInt8_ReturnsFullModel()
+    public void GetModel_Asr_HasRequiredDataFile()
     {
-        // Arrange
-        var registry = new ModelRegistry(CreateOptions(o => o.UseInt8Quantization = false));
+        // Arrange - The encoder model is split into encoder.onnx + encoder.onnx_data
+        var registry = new ModelRegistry(CreateOptions());
 
         // Act
         var model = registry.GetModel(ModelType.Asr);
 
         // Assert
         model.Should().NotBeNull();
-        model!.Filename.Should().NotContain("int8");
+        model!.AdditionalFiles.Should().Contain("onnx/encoder.onnx_data");
     }
 
     [Fact]
@@ -144,5 +145,7 @@ public class ModelRegistryTests
         model.Should().NotBeNull();
         model!.AdditionalFiles.Should().NotBeEmpty();
         model.AdditionalFiles.Should().Contain("config.json");
+        model.AdditionalFiles.Should().Contain("onnx/encoder.onnx_data");
+        model.AdditionalFiles.Should().Contain("onnx/decoder.onnx");
     }
 }

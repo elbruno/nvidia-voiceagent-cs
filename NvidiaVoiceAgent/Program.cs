@@ -23,6 +23,10 @@ builder.Services.AddModelHub(options =>
 builder.Services.AddSingleton<ILogBroadcaster, LogBroadcaster>();
 builder.Services.AddSingleton<IAudioProcessor, AudioProcessor>();
 
+// Override the default ConsoleProgressReporter with WebProgressReporter
+// to broadcast download progress to WebSocket clients
+builder.Services.AddSingleton<IProgressReporter, WebProgressReporter>();
+
 // Register WebSocket handlers
 builder.Services.AddSingleton<VoiceWebSocketHandler>();
 builder.Services.AddSingleton<LogsWebSocketHandler>();

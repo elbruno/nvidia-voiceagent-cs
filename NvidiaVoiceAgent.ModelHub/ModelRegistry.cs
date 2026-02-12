@@ -20,11 +20,12 @@ public class ModelRegistry : IModelRegistry
                 Type = ModelType.Asr,
                 Name = "Parakeet-TDT-0.6B-V2",
                 RepoId = "onnx-community/parakeet-tdt-0.6b-v2-ONNX",
-                Filename = opts.UseInt8Quantization ? "onnx/encoder_model_int8.onnx" : "onnx/encoder_model.onnx",
-                ExpectedSizeBytes = opts.UseInt8Quantization ? 683_671_552L : 1_267_343_360L,
+                // Note: The ONNX file is split into encoder.onnx (671 KB) and encoder.onnx_data (2.48 GB)
+                Filename = "onnx/encoder.onnx",
+                ExpectedSizeBytes = 2_665_185_280L, // ~2.48 GB for encoder.onnx_data + encoder.onnx
                 LocalDirectory = "parakeet-tdt-0.6b",
                 IsRequired = true,
-                AdditionalFiles = ["config.json"]
+                AdditionalFiles = ["config.json", "onnx/encoder.onnx_data", "onnx/decoder.onnx"]
             }
         };
     }

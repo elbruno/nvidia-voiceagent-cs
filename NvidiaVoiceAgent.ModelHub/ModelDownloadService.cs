@@ -103,12 +103,31 @@ public class ModelDownloadService : IModelDownloadService
                 "Downloading model {ModelName} from {RepoId}/{Filename}",
                 model.Name, model.RepoId, model.Filename);
 
-            // Download main model file
+            // Create a progress reporter that forwards to our IProgressReporter
+            var lastReportedProgress = -1;
+            var progress = new Progress<int>(progressPercent =>
+            {
+                // Only report every 5% to avoid spamming logs
+                if (progressPercent >= lastReportedProgress + 5 || progressPercent == 100)
+                {
+                    lastReportedProgress = progressPercent;
+                    var bytesDownloaded = (long)(model.ExpectedSizeBytes * progressPercent / 100.0);
+                    _progressReporter.Report(new DownloadProgress
+                    {
+                        ModelName = model.Name,
+                        BytesDownloaded = bytesDownloaded,
+                        TotalBytes = model.ExpectedSizeBytes
+                    });
+                }
+            });
+
+            // Download main model file with progress reporting
             var modelPath = await HFDownloader.DownloadFileAsync(
                 model.RepoId,
                 model.Filename,
                 localDir: localDir,
-                token: _options.HuggingFaceToken);
+                token: _options.HuggingFaceToken,
+                progress: progress);
 
             // Download additional files
             foreach (var additionalFile in model.AdditionalFiles)
