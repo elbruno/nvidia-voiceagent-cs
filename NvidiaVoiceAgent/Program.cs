@@ -1,5 +1,6 @@
 using NvidiaVoiceAgent.Hubs;
 using NvidiaVoiceAgent.Models;
+using NvidiaVoiceAgent.ModelHub;
 using NvidiaVoiceAgent.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,6 +8,16 @@ var builder = WebApplication.CreateBuilder(args);
 // Configure model settings from appsettings.json
 builder.Services.Configure<ModelConfig>(
     builder.Configuration.GetSection("ModelConfig"));
+
+// Register ModelHub services for automatic model downloading
+builder.Services.AddModelHub(options =>
+{
+    var section = builder.Configuration.GetSection(ModelHubOptions.SectionName);
+    options.AutoDownload = section.GetValue("AutoDownload", true);
+    options.UseInt8Quantization = section.GetValue("UseInt8Quantization", true);
+    options.ModelCachePath = section.GetValue("ModelCachePath", "models") ?? "models";
+    options.HuggingFaceToken = section.GetValue<string?>("HuggingFaceToken", null);
+});
 
 // Register services
 builder.Services.AddSingleton<ILogBroadcaster, LogBroadcaster>();
@@ -26,6 +37,10 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+
+// Download required models on startup (if auto-download is enabled)
+var modelDownloadService = app.Services.GetRequiredService<IModelDownloadService>();
+await modelDownloadService.EnsureModelsAsync();
 
 // Enable WebSockets
 app.UseWebSockets();

@@ -43,6 +43,9 @@ TestResult.xml
 # ONNX models (large files)
 *.onnx
 
+# Downloaded models directory
+models/
+
 # Local env files
 .env
 *.local
