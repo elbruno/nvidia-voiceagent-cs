@@ -26,6 +26,39 @@ public class ModelRegistry : IModelRegistry
                 LocalDirectory = "parakeet-tdt-0.6b",
                 IsRequired = true,
                 AdditionalFiles = ["onnx/encoder.onnx_data", "onnx/decoder.onnx"]
+            },
+            new ModelInfo
+            {
+                Type = ModelType.Tts,
+                Name = "FastPitch-HiFiGAN-EN",
+                RepoId = "nvidia/tts_en_fastpitch",
+                Filename = "model.onnx",
+                ExpectedSizeBytes = 85_000_000L, // ~80 MB (placeholder)
+                LocalDirectory = "fastpitch-en",
+                IsRequired = false,
+                AdditionalFiles = []
+            },
+            new ModelInfo
+            {
+                Type = ModelType.Vocoder,
+                Name = "HiFiGAN-EN",
+                RepoId = "nvidia/tts_hifigan",
+                Filename = "model.onnx",
+                ExpectedSizeBytes = 55_000_000L, // ~52 MB (placeholder)
+                LocalDirectory = "hifigan-en",
+                IsRequired = false,
+                AdditionalFiles = []
+            },
+            new ModelInfo
+            {
+                Type = ModelType.Llm,
+                Name = "TinyLlama-1.1B-ONNX",
+                RepoId = "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+                Filename = "model.onnx",
+                ExpectedSizeBytes = 2_200_000_000L, // ~2.05 GB (placeholder)
+                LocalDirectory = "tinyllama-1.1b",
+                IsRequired = false,
+                AdditionalFiles = []
             }
         };
     }

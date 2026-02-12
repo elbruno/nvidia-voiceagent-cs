@@ -96,6 +96,24 @@ app.MapGet("/api/models", (IModelRegistry registry, IModelDownloadService modelD
     return results;
 });
 
+// Trigger download for a specific model by name
+app.MapPost("/api/models/{name}/download", async (string name, IModelRegistry registry, IModelDownloadService modelDownload) =>
+{
+    var allModels = registry.GetAllModels();
+    var model = allModels.FirstOrDefault(m => m.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+    if (model == null)
+    {
+        return Results.NotFound(new { error = $"Model '{name}' not found." });
+    }
+
+    var result = await modelDownload.DownloadModelAsync(model.Type);
+    if (result.Success)
+    {
+        return Results.Ok(new { message = $"Model '{name}' downloaded successfully.", path = result.ModelPath });
+    }
+    return Results.Json(new { error = result.ErrorMessage }, statusCode: 500);
+});
+
 // WebSocket endpoint for voice processing
 app.Map("/ws/voice", async (HttpContext context, VoiceWebSocketHandler handler) =>
 {

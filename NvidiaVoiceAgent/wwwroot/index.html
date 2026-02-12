@@ -323,6 +323,24 @@
             border: 1px solid #ffb74d;
             background: rgba(255, 183, 77, 0.1);
         }
+        .model-download-btn {
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            border: 1px solid #4fc3f7;
+            background: rgba(79, 195, 247, 0.1);
+            color: #4fc3f7;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .model-download-btn:hover {
+            background: rgba(79, 195, 247, 0.25);
+        }
+        .model-download-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
         .model-card-progress {
             margin-top: 0.35rem;
             display: none;
@@ -713,6 +731,7 @@
                     : m.status === 'downloading' ? '📥 Downloading'
                     : '❌ Not Downloaded';
                 const sizeMb = m.expected_size_mb.toFixed(1);
+                const showDownloadBtn = m.status !== 'downloaded';
 
                 card.innerHTML = `
                     <div class="model-card-row">
@@ -724,6 +743,7 @@
                             </div>
                         </div>
                         <div class="model-card-status">
+                            ${showDownloadBtn ? `<button class="model-download-btn" id="model-dl-btn-${idx}" onclick="downloadModel('${esc(m.name)}', ${idx})">⬇ Download</button>` : ''}
                             <span class="status-badge ${statusClass}" id="model-badge-${idx}">${statusLabel}</span>
                         </div>
                     </div>
@@ -797,11 +817,13 @@
             const progressEl = document.getElementById(`model-progress-${idx}`);
             const bar = document.getElementById(`model-bar-${idx}`);
             const pctEl = document.getElementById(`model-pct-${idx}`);
+            const dlBtn = document.getElementById(`model-dl-btn-${idx}`);
             if (!badge) return;
 
             if (status === 'downloading') {
                 badge.className = 'status-badge downloading';
                 badge.textContent = `📥 ${pct.toFixed(0)}%`;
+                if (dlBtn) { dlBtn.disabled = true; dlBtn.textContent = '⏳ Downloading…'; }
                 if (progressEl) {
                     progressEl.classList.add('visible');
                     bar.style.width = `${pct}%`;
@@ -810,11 +832,34 @@
             } else if (status === 'downloaded') {
                 badge.className = 'status-badge downloaded';
                 badge.textContent = '✅ Downloaded';
+                if (dlBtn) dlBtn.remove();
                 if (progressEl) progressEl.classList.remove('visible');
             } else {
                 badge.className = 'status-badge not-downloaded';
                 badge.textContent = '❌ Not Downloaded';
+                if (dlBtn) { dlBtn.disabled = false; dlBtn.textContent = '⬇ Download'; }
                 if (progressEl) progressEl.classList.remove('visible');
+            }
+        }
+
+        async function downloadModel(modelName, idx) {
+            const btn = document.getElementById(`model-dl-btn-${idx}`);
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Starting…'; }
+            clientLog(`Requesting download for: ${modelName}`);
+            try {
+                const resp = await fetch(`/api/models/${encodeURIComponent(modelName)}/download`, { method: 'POST' });
+                if (resp.ok) {
+                    clientLog(`Download triggered for: ${modelName}`);
+                    // The progress will be tracked via log WebSocket messages
+                    setTimeout(() => fetchModels(), 2000);
+                } else {
+                    const err = await resp.json().catch(() => ({}));
+                    clientLog(`Download failed for ${modelName}: ${err.error || resp.statusText}`);
+                    if (btn) { btn.disabled = false; btn.textContent = '⬇ Retry'; }
+                }
+            } catch (e) {
+                clientLog(`Download error for ${modelName}: ${e.message}`);
+                if (btn) { btn.disabled = false; btn.textContent = '⬇ Retry'; }
             }
         }
 

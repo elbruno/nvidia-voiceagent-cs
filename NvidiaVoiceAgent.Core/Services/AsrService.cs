@@ -15,7 +15,7 @@ public class AsrService : IAsrService, IDisposable
 {
     private readonly ILogger<AsrService> _logger;
     private readonly ModelConfig _config;
-    private readonly MelSpectrogramExtractor _melExtractor;
+    private MelSpectrogramExtractor _melExtractor;
     private readonly IModelDownloadService? _modelDownloadService;
     private readonly SemaphoreSlim _loadLock = new(1, 1);
 
@@ -24,6 +24,7 @@ public class AsrService : IAsrService, IDisposable
     private bool _isModelLoaded;
     private bool _isMockMode;
     private bool _disposed;
+    private bool _cudaAvailable;
 
     // Model input/output names (may vary by model export)
     private const string InputName = "audio_signal";
@@ -97,13 +98,16 @@ public class AsrService : IAsrService, IDisposable
             var sessionOptions = CreateSessionOptions();
             _session = new InferenceSession(modelPath, sessionOptions);
 
+            // Read expected mel bins from model input metadata and reconfigure extractor
+            ConfigureMelExtractorFromModel();
+
             // Load vocabulary if available
             LoadVocabulary(Path.GetDirectoryName(modelPath)!);
 
             _isModelLoaded = true;
             _isMockMode = false;
 
-            var provider = _config.UseGpu ? "CUDA (GPU)" : "CPU";
+            var provider = _cudaAvailable ? "CUDA (GPU)" : "CPU";
             _logger.LogInformation("ASR model loaded successfully using {Provider}", provider);
         }
         finally
@@ -162,7 +166,7 @@ public class AsrService : IAsrService, IDisposable
         }
 
         // Try ModelHub downloaded path
-        if (_modelDownloadService != null)
+        if (_modelDownloadService != null && _modelDownloadService.IsModelAvailable(ModelType.Asr))
         {
             var hubPath = _modelDownloadService.GetModelPath(ModelType.Asr);
             if (hubPath != null)
@@ -178,6 +182,7 @@ public class AsrService : IAsrService, IDisposable
     private Microsoft.ML.OnnxRuntime.SessionOptions CreateSessionOptions()
     {
         var options = new Microsoft.ML.OnnxRuntime.SessionOptions();
+        _cudaAvailable = false;
 
         if (_config.UseGpu)
         {
@@ -185,6 +190,7 @@ public class AsrService : IAsrService, IDisposable
             {
                 // Try CUDA provider first
                 options.AppendExecutionProvider_CUDA(0);
+                _cudaAvailable = true;
                 _logger.LogInformation("CUDA execution provider configured");
             }
             catch (Exception ex)
@@ -201,6 +207,42 @@ public class AsrService : IAsrService, IDisposable
         options.EnableMemoryPattern = true;
 
         return options;
+    }
+
+    /// <summary>
+    /// Read expected mel bin count from the ONNX model's input metadata and
+    /// reconfigure the mel-spectrogram extractor if it differs from the current setting.
+    /// </summary>
+    private void ConfigureMelExtractorFromModel()
+    {
+        if (_session == null) return;
+
+        foreach (var input in _session.InputMetadata)
+        {
+            if (input.Value.ElementType != typeof(float)) continue;
+
+            // Typical shape: [batch, mel_bins, time] or [batch, time, mel_bins]
+            var dims = input.Value.Dimensions;
+            if (dims.Length >= 2)
+            {
+                // mel_bins dimension is usually the second one (index 1) for shape [1, mel, T]
+                int expectedMels = dims[1];
+
+                // Sanity check: mel bins should be between 40 and 256
+                if (expectedMels >= 40 && expectedMels <= 256 && expectedMels != _melExtractor.NumMels)
+                {
+                    _logger.LogInformation(
+                        "Model expects {Expected} mel bins, reconfiguring extractor (was {Current})",
+                        expectedMels, _melExtractor.NumMels);
+                    _melExtractor = new MelSpectrogramExtractor(nMels: expectedMels);
+                }
+                else if (expectedMels == _melExtractor.NumMels)
+                {
+                    _logger.LogDebug("Model mel bins ({MelBins}) match extractor configuration", expectedMels);
+                }
+                break;
+            }
+        }
     }
 
     private void LoadVocabulary(string modelDirectory)

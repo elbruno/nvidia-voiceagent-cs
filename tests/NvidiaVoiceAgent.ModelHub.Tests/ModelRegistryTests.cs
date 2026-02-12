@@ -78,7 +78,7 @@ public class ModelRegistryTests
     }
 
     [Fact]
-    public void GetModel_UnregisteredType_ReturnsNull()
+    public void GetModel_Llm_ReturnsOptionalModel()
     {
         // Arrange
         var registry = new ModelRegistry(CreateOptions());
@@ -87,7 +87,22 @@ public class ModelRegistryTests
         var model = registry.GetModel(ModelType.Llm);
 
         // Assert
-        model.Should().BeNull();
+        model.Should().NotBeNull();
+        model!.IsRequired.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetAllModels_ReturnsAllFourTypes()
+    {
+        // Arrange
+        var registry = new ModelRegistry(CreateOptions());
+
+        // Act
+        var models = registry.GetAllModels();
+
+        // Assert
+        models.Should().HaveCount(4);
+        models.Select(m => m.Type).Should().Contain(new[] { ModelType.Asr, ModelType.Tts, ModelType.Vocoder, ModelType.Llm });
     }
 
     [Fact]

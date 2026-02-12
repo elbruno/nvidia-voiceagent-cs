@@ -57,12 +57,36 @@ Returns detailed status for every registered model.
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | Human-readable model name |
-| `type` | string | Model type: `"Asr"`, `"Tts"`, or `"Llm"` |
+| `type` | string | Model type: `"Asr"`, `"Tts"`, `"Vocoder"`, or `"Llm"` |
 | `status` | string | `"downloaded"` or `"not_downloaded"` |
 | `repo_id` | string | HuggingFace repository ID |
 | `local_path` | string? | Absolute path on disk (null if not downloaded) |
 | `expected_size_mb` | number | Expected download size in MB |
 | `is_required` | boolean | Whether the model is required for the app to function |
+
+The registry includes four models: **Parakeet-TDT (ASR)**, **FastPitch (TTS)**, **HiFiGAN (Vocoder)**, and **TinyLlama (LLM)**. Only the ASR model is required; the others are optional and show download buttons in the UI.
+
+---
+
+### POST /api/models/{name}/download
+
+Trigger download of a specific model by name.
+
+**Request:** No body required. The `{name}` path parameter is the model name (e.g., `Parakeet-TDT-0.6B-V2`).
+
+**Response** (`200 OK`):
+
+```json
+{
+  "message": "Model 'Parakeet-TDT-0.6B-V2' downloaded successfully.",
+  "path": "model-cache/parakeet-tdt-0.6b/onnx/encoder.onnx"
+}
+```
+
+**Error Responses:**
+
+- `404 Not Found` — Model name not recognized
+- `500 Internal Server Error` — Download failed (network, disk, etc.)
 
 ---
 

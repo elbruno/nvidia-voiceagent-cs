@@ -104,6 +104,14 @@ public class ModelDownloadService : IModelDownloadService
                 "Downloading model {ModelName} from {RepoId}/{Filename}",
                 model.Name, model.RepoId, model.Filename);
 
+            // Delete existing files to avoid IOException from HuggingfaceHub's
+            // ChmodAndReplace, which cannot overwrite on Windows
+            DeleteExistingFile(localDir, model.Filename);
+            foreach (var additionalFile in model.AdditionalFiles)
+            {
+                DeleteExistingFile(localDir, additionalFile);
+            }
+
             // Create a progress reporter that forwards to our IProgressReporter
             var lastReportedProgress = -1;
             var progress = new Progress<int>(progressPercent =>
@@ -123,12 +131,10 @@ public class ModelDownloadService : IModelDownloadService
             });
 
             // Download main model file with progress reporting
-            // Use forceDownload to overwrite partially-cached files
             var modelPath = await HFDownloader.DownloadFileAsync(
                 model.RepoId,
                 model.Filename,
                 localDir: localDir,
-                forceDownload: true,
                 token: _options.HuggingFaceToken,
                 progress: progress);
 
@@ -143,7 +149,6 @@ public class ModelDownloadService : IModelDownloadService
                         model.RepoId,
                         additionalFile,
                         localDir: localDir,
-                        forceDownload: true,
                         token: _options.HuggingFaceToken);
 
                     _logger.LogDebug("Downloaded additional file: {File}", additionalFile);
@@ -175,6 +180,20 @@ public class ModelDownloadService : IModelDownloadService
                 ModelType = modelType,
                 ErrorMessage = ex.Message
             };
+        }
+    }
+
+    /// <summary>
+    /// Delete an existing file in the local directory to avoid IOException
+    /// from HuggingfaceHub's ChmodAndReplace on Windows.
+    /// </summary>
+    private void DeleteExistingFile(string localDir, string relativeFilename)
+    {
+        var filePath = Path.Combine(localDir, relativeFilename);
+        if (File.Exists(filePath))
+        {
+            _logger.LogDebug("Removing existing file before re-download: {File}", filePath);
+            File.Delete(filePath);
         }
     }
 

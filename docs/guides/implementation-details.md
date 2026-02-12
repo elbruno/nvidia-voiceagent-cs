@@ -75,13 +75,15 @@ This handles common conversions like 44100 Hz → 16000 Hz (browser default → 
 
 | Parameter | Value |
 |-----------|-------|
-| Mel bins | 80 |
+| Mel bins | **128** (auto-detected from model) |
 | FFT size | 512 |
 | Window size | 400 samples (25ms at 16kHz) |
 | Hop size | 160 samples (10ms at 16kHz) |
 | Sample rate | 16000 Hz |
 | Window function | Hann |
 | Normalization | Mean = -4.0, StdDev = 4.0 |
+
+> **Note:** The mel bin count is auto-detected from the ONNX model's input metadata at load time. The extractor defaults to 128 bins but will reconfigure itself if the model expects a different value.
 
 ### Processing Steps
 

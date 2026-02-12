@@ -95,7 +95,7 @@ public class ModelDownloadServiceTests
     }
 
     [Fact]
-    public async Task DownloadModelAsync_WhenUnregisteredType_ReturnsFailure()
+    public async Task DownloadModelAsync_WhenAutoDownloadDisabled_ReturnsNotDownloaded()
     {
         // Arrange
         var service = CreateService(new ModelHubOptions
@@ -104,12 +104,13 @@ public class ModelDownloadServiceTests
             AutoDownload = false
         });
 
-        // Act
+        // Act - LLM is now registered but model files don't exist,
+        // and auto-download is disabled so it won't try to fetch them.
         var result = await service.DownloadModelAsync(ModelType.Llm);
 
-        // Assert
+        // Assert - Download should fail (404 from HuggingFace or network error)
+        // since the placeholder repo/filename doesn't exist as a real ONNX model
         result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("No model registered");
     }
 
     [Fact]

@@ -4,29 +4,56 @@ namespace NvidiaVoiceAgent.Core.Services;
 
 /// <summary>
 /// Extracts mel-spectrogram features from audio for ASR models.
-/// Configuration matches Parakeet-TDT requirements:
-/// - 80 mel bins
-/// - 25ms window (400 samples at 16kHz)
-/// - 10ms hop (160 samples at 16kHz)
-/// - 16kHz sample rate
+/// Default configuration matches Parakeet-TDT requirements.
+/// The number of mel bins can be adjusted at construction time to match the model.
 /// </summary>
 public class MelSpectrogramExtractor
 {
-    private const int SampleRate = 16000;
-    private const int NMels = 80;
-    private const int NFFt = 512;
-    private const int WinLength = 400;  // 25ms at 16kHz
-    private const int HopLength = 160;  // 10ms at 16kHz
-    private const float FMin = 0f;
-    private const float FMax = 8000f;   // Nyquist for 16kHz
+    private readonly int _sampleRate;
+    private readonly int _nMels;
+    private readonly int _nFft;
+    private readonly int _winLength;
+    private readonly int _hopLength;
+    private readonly float _fMin;
+    private readonly float _fMax;
 
     private readonly float[] _window;
     private readonly float[,] _melFilterbank;
 
-    public MelSpectrogramExtractor()
+    /// <summary>
+    /// Number of mel bins this extractor produces.
+    /// </summary>
+    public int NumMels => _nMels;
+
+    /// <summary>
+    /// Create a mel-spectrogram extractor with configurable parameters.
+    /// </summary>
+    /// <param name="nMels">Number of mel filter bins (default 128 for Parakeet-TDT-V2).</param>
+    /// <param name="nFft">FFT size (default 512).</param>
+    /// <param name="winLength">Window length in samples (default 400 = 25ms at 16kHz).</param>
+    /// <param name="hopLength">Hop length in samples (default 160 = 10ms at 16kHz).</param>
+    /// <param name="sampleRate">Audio sample rate (default 16000).</param>
+    /// <param name="fMin">Minimum frequency for the mel filterbank (default 0).</param>
+    /// <param name="fMax">Maximum frequency for the mel filterbank (default 8000 = Nyquist at 16kHz).</param>
+    public MelSpectrogramExtractor(
+        int nMels = 128,
+        int nFft = 512,
+        int winLength = 400,
+        int hopLength = 160,
+        int sampleRate = 16000,
+        float fMin = 0f,
+        float fMax = 8000f)
     {
-        _window = CreateHannWindow(WinLength);
-        _melFilterbank = CreateMelFilterbank(NFFt, SampleRate, NMels, FMin, FMax);
+        _nMels = nMels;
+        _nFft = nFft;
+        _winLength = winLength;
+        _hopLength = hopLength;
+        _sampleRate = sampleRate;
+        _fMin = fMin;
+        _fMax = fMax;
+
+        _window = CreateHannWindow(_winLength);
+        _melFilterbank = CreateMelFilterbank(_nFft, _sampleRate, _nMels, _fMin, _fMax);
     }
 
     /// <summary>
@@ -38,28 +65,28 @@ public class MelSpectrogramExtractor
     {
         if (audioSamples == null || audioSamples.Length == 0)
         {
-            return new float[0, NMels];
+            return new float[0, _nMels];
         }
 
         // Calculate number of frames
-        int numFrames = Math.Max(1, (audioSamples.Length - WinLength) / HopLength + 1);
-        var melSpectrogram = new float[numFrames, NMels];
+        int numFrames = Math.Max(1, (audioSamples.Length - _winLength) / _hopLength + 1);
+        var melSpectrogram = new float[numFrames, _nMels];
 
         // Pre-allocate buffers
-        var windowedFrame = new float[NFFt];
-        var fftReal = new float[NFFt];
-        var fftImag = new float[NFFt];
-        var powerSpectrum = new float[NFFt / 2 + 1];
+        var windowedFrame = new float[_nFft];
+        var fftReal = new float[_nFft];
+        var fftImag = new float[_nFft];
+        var powerSpectrum = new float[_nFft / 2 + 1];
 
         for (int frame = 0; frame < numFrames; frame++)
         {
-            int startSample = frame * HopLength;
+            int startSample = frame * _hopLength;
 
             // Clear buffers
             Array.Clear(windowedFrame, 0, windowedFrame.Length);
 
             // Apply window
-            int copyLength = Math.Min(WinLength, audioSamples.Length - startSample);
+            int copyLength = Math.Min(_winLength, audioSamples.Length - startSample);
             for (int i = 0; i < copyLength; i++)
             {
                 windowedFrame[i] = audioSamples[startSample + i] * _window[i];
@@ -69,16 +96,16 @@ public class MelSpectrogramExtractor
             ComputeRealFFT(windowedFrame, fftReal, fftImag);
 
             // Compute power spectrum
-            for (int i = 0; i <= NFFt / 2; i++)
+            for (int i = 0; i <= _nFft / 2; i++)
             {
                 powerSpectrum[i] = fftReal[i] * fftReal[i] + fftImag[i] * fftImag[i];
             }
 
             // Apply mel filterbank
-            for (int mel = 0; mel < NMels; mel++)
+            for (int mel = 0; mel < _nMels; mel++)
             {
                 float sum = 0;
-                for (int k = 0; k <= NFFt / 2; k++)
+                for (int k = 0; k <= _nFft / 2; k++)
                 {
                     sum += powerSpectrum[k] * _melFilterbank[mel, k];
                 }
