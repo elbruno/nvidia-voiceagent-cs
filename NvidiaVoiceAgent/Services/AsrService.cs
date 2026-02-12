@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using NvidiaVoiceAgent.Models;
+using NvidiaVoiceAgent.ModelHub;
 
 namespace NvidiaVoiceAgent.Services;
 
@@ -15,6 +16,7 @@ public class AsrService : IAsrService, IDisposable
     private readonly ILogger<AsrService> _logger;
     private readonly ModelConfig _config;
     private readonly MelSpectrogramExtractor _melExtractor;
+    private readonly IModelDownloadService? _modelDownloadService;
     private readonly SemaphoreSlim _loadLock = new(1, 1);
 
     private InferenceSession? _session;
@@ -30,11 +32,13 @@ public class AsrService : IAsrService, IDisposable
 
     public AsrService(
         ILogger<AsrService> logger,
-        IOptions<ModelConfig> config)
+        IOptions<ModelConfig> config,
+        IModelDownloadService? modelDownloadService = null)
     {
         _logger = logger;
         _config = config.Value;
         _melExtractor = new MelSpectrogramExtractor();
+        _modelDownloadService = modelDownloadService;
     }
 
     public bool IsModelLoaded => _isModelLoaded;
@@ -152,6 +156,17 @@ public class AsrService : IAsrService, IDisposable
             if (File.Exists(fullPath))
             {
                 return fullPath;
+            }
+        }
+
+        // Try ModelHub downloaded path
+        if (_modelDownloadService != null)
+        {
+            var hubPath = _modelDownloadService.GetModelPath(ModelType.Asr);
+            if (hubPath != null)
+            {
+                _logger.LogInformation("Found ASR model via ModelHub at {Path}", hubPath);
+                return hubPath;
             }
         }
 
