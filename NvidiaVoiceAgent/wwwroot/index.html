@@ -341,6 +341,24 @@
             opacity: 0.4;
             cursor: not-allowed;
         }
+        .model-delete-btn {
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            border: 1px solid #ef5350;
+            background: rgba(239, 83, 80, 0.1);
+            color: #ef5350;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .model-delete-btn:hover {
+            background: rgba(239, 83, 80, 0.25);
+        }
+        .model-delete-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
         .model-coming-soon {
             font-size: 0.65rem;
             font-weight: 600;
@@ -743,6 +761,7 @@
                 const sizeMb = m.expected_size_mb.toFixed(1);
                 const showDownloadBtn = m.status !== 'downloaded' && m.is_available_for_download;
                 const showComingSoon = m.status !== 'downloaded' && !m.is_available_for_download;
+                const showDeleteBtn = m.status === 'downloaded';
 
                 card.innerHTML = `
                     <div class="model-card-row">
@@ -756,6 +775,7 @@
                         <div class="model-card-status">
                             ${showDownloadBtn ? `<button class="model-download-btn" id="model-dl-btn-${idx}" onclick="downloadModel('${esc(m.name)}', ${idx})">⬇ Download</button>` : ''}
                             ${showComingSoon ? '<span class="model-coming-soon">🔜 Coming Soon</span>' : ''}
+                            ${showDeleteBtn ? `<button class="model-delete-btn" id="model-del-btn-${idx}" onclick="deleteModel('${esc(m.name)}', ${idx})">🗑️ Delete</button>` : ''}
                             <span class="status-badge ${statusClass}" id="model-badge-${idx}">${statusLabel}</span>
                         </div>
                     </div>
@@ -872,6 +892,28 @@
             } catch (e) {
                 clientLog(`Download error for ${modelName}: ${e.message}`);
                 if (btn) { btn.disabled = false; btn.textContent = '⬇ Retry'; }
+            }
+        }
+
+        async function deleteModel(modelName, idx) {
+            if (!confirm(`Delete model "${modelName}" and all its files?`)) return;
+            const btn = document.getElementById(`model-del-btn-${idx}`);
+            if (btn) { btn.disabled = true; btn.textContent = '🗑️ Deleting…'; }
+            clientLog(`Requesting delete for: ${modelName}`);
+            try {
+                const resp = await fetch(`/api/models/${encodeURIComponent(modelName)}`, { method: 'DELETE' });
+                const data = await resp.json().catch(() => ({}));
+                if (resp.ok) {
+                    clientLog(`Deleted model: ${modelName}`);
+                    fetchModels();
+                    checkModelStatus();
+                } else {
+                    clientLog(`Delete failed for ${modelName}: ${data.error || resp.statusText}`);
+                    if (btn) { btn.disabled = false; btn.textContent = '🗑️ Delete'; }
+                }
+            } catch (e) {
+                clientLog(`Delete error for ${modelName}: ${e.message}`);
+                if (btn) { btn.disabled = false; btn.textContent = '🗑️ Delete'; }
             }
         }
 

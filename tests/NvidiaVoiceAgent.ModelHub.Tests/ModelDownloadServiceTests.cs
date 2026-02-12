@@ -129,4 +129,80 @@ public class ModelDownloadServiceTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => service.EnsureModelsAsync(cts.Token));
     }
+
+    [Fact]
+    public void DeleteModel_WhenModelNotOnDisk_ReturnsFalse()
+    {
+        // Arrange
+        var service = CreateService(new ModelHubOptions
+        {
+            ModelCachePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()),
+            AutoDownload = false
+        });
+
+        // Act
+        var deleted = service.DeleteModel(ModelType.Asr);
+
+        // Assert
+        deleted.Should().BeFalse();
+    }
+
+    [Fact]
+    public void DeleteModel_WhenFilesExist_DeletesAllFilesAndReturnsTrue()
+    {
+        // Arrange
+        var cachePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var service = CreateService(new ModelHubOptions
+        {
+            ModelCachePath = cachePath,
+            AutoDownload = false
+        });
+
+        // Create fake model files matching the ASR model layout
+        var modelDir = Path.Combine(cachePath, "parakeet-tdt-0.6b", "onnx");
+        Directory.CreateDirectory(modelDir);
+        File.WriteAllText(Path.Combine(modelDir, "encoder.onnx"), "fake");
+        File.WriteAllText(Path.Combine(modelDir, "encoder.onnx_data"), "fake");
+        File.WriteAllText(Path.Combine(modelDir, "decoder.onnx"), "fake");
+
+        // Act
+        var deleted = service.DeleteModel(ModelType.Asr);
+
+        // Assert
+        deleted.Should().BeTrue();
+        File.Exists(Path.Combine(modelDir, "encoder.onnx")).Should().BeFalse();
+        File.Exists(Path.Combine(modelDir, "encoder.onnx_data")).Should().BeFalse();
+        File.Exists(Path.Combine(modelDir, "decoder.onnx")).Should().BeFalse();
+
+        // Cleanup
+        if (Directory.Exists(cachePath)) Directory.Delete(cachePath, true);
+    }
+
+    [Fact]
+    public void DeleteModel_CleansUpEmptyDirectories()
+    {
+        // Arrange
+        var cachePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var service = CreateService(new ModelHubOptions
+        {
+            ModelCachePath = cachePath,
+            AutoDownload = false
+        });
+
+        // Create fake model files
+        var modelDir = Path.Combine(cachePath, "parakeet-tdt-0.6b", "onnx");
+        Directory.CreateDirectory(modelDir);
+        File.WriteAllText(Path.Combine(modelDir, "encoder.onnx"), "fake");
+        File.WriteAllText(Path.Combine(modelDir, "encoder.onnx_data"), "fake");
+        File.WriteAllText(Path.Combine(modelDir, "decoder.onnx"), "fake");
+
+        // Act
+        service.DeleteModel(ModelType.Asr);
+
+        // Assert - empty directories should be removed
+        Directory.Exists(modelDir).Should().BeFalse();
+
+        // Cleanup
+        if (Directory.Exists(cachePath)) Directory.Delete(cachePath, true);
+    }
 }

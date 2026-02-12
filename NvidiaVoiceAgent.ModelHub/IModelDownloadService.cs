@@ -34,4 +34,11 @@ public interface IModelDownloadService
     /// <param name="modelType">Type of model to check.</param>
     /// <returns>True if the model is available locally.</returns>
     bool IsModelAvailable(ModelType modelType);
+
+    /// <summary>
+    /// Delete a model and all its related files from the local cache.
+    /// </summary>
+    /// <param name="modelType">Type of model to delete.</param>
+    /// <returns>True if files were deleted, false if model was not found on disk.</returns>
+    bool DeleteModel(ModelType modelType);
 }

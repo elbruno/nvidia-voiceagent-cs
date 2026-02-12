@@ -294,10 +294,16 @@ public class AsrService : IAsrService, IDisposable
         }
 
         var inputTensor = new DenseTensor<float>(inputData, new[] { 1, numMels, numFrames });
-        var lengthTensor = new DenseTensor<long>(new long[] { numFrames }, new[] { 1 });
+
+        // The encoder's convolutional frontend subsamples the mel spectrogram
+        // (stride 2). The ONNX export does not track the length reduction
+        // internally, so we compute the post-subsampling length ourselves.
+        // Formula: ceil(numFrames / 2) = (numFrames + 1) / 2
+        int encoderLength = (numFrames + 1) / 2;
+        var lengthTensor = new DenseTensor<long>(new long[] { encoderLength }, new[] { 1 });
 
         // Prepare inputs - try different input configurations based on model
-        var inputs = CreateModelInputs(inputTensor, lengthTensor, numFrames);
+        var inputs = CreateModelInputs(inputTensor, lengthTensor, encoderLength);
 
         // Run inference
         using var results = _session.Run(inputs);

@@ -250,4 +250,98 @@ public class ModelDownloadService : IModelDownloadService
 
         return true;
     }
+
+    /// <inheritdoc />
+    public bool DeleteModel(ModelType modelType)
+    {
+        var model = _registry.GetModel(modelType);
+        if (model == null)
+        {
+            _logger.LogWarning("Cannot delete: no model registered for type {ModelType}", modelType);
+            return false;
+        }
+
+        var localDir = Path.Combine(_options.ModelCachePath, model.LocalDirectory);
+        if (!Directory.Exists(localDir))
+        {
+            _logger.LogInformation("Model {ModelName} directory does not exist, nothing to delete", model.Name);
+            return false;
+        }
+
+        var deletedAny = false;
+
+        // Delete primary file
+        DeleteFileIfExists(localDir, model.Filename, ref deletedAny);
+
+        // Delete additional files
+        foreach (var additionalFile in model.AdditionalFiles)
+        {
+            DeleteFileIfExists(localDir, additionalFile, ref deletedAny);
+        }
+
+        // Clean up empty directories (walk up from subdirectories)
+        CleanupEmptyDirectories(localDir);
+
+        if (deletedAny)
+        {
+            _logger.LogInformation("Model {ModelName} deleted from {Path}", model.Name, localDir);
+        }
+        else
+        {
+            _logger.LogInformation("No files found to delete for model {ModelName}", model.Name);
+        }
+
+        return deletedAny;
+    }
+
+    /// <summary>
+    /// Delete a specific file and track whether anything was deleted.
+    /// </summary>
+    private void DeleteFileIfExists(string localDir, string relativeFilename, ref bool deletedAny)
+    {
+        var filePath = Path.Combine(localDir, relativeFilename);
+        if (File.Exists(filePath))
+        {
+            File.Delete(filePath);
+            _logger.LogDebug("Deleted file: {File}", filePath);
+            deletedAny = true;
+        }
+    }
+
+    /// <summary>
+    /// Remove empty directories starting from the given path and walking up.
+    /// Stops at the ModelCachePath root.
+    /// </summary>
+    private void CleanupEmptyDirectories(string directory)
+    {
+        try
+        {
+            var cacheRoot = Path.GetFullPath(_options.ModelCachePath);
+
+            // Walk subdirectories depth-first and remove empty ones
+            if (Directory.Exists(directory))
+            {
+                foreach (var subDir in Directory.GetDirectories(directory, "*", SearchOption.AllDirectories)
+                    .OrderByDescending(d => d.Length))
+                {
+                    if (Directory.Exists(subDir) && !Directory.EnumerateFileSystemEntries(subDir).Any())
+                    {
+                        Directory.Delete(subDir);
+                        _logger.LogDebug("Removed empty directory: {Dir}", subDir);
+                    }
+                }
+
+                // Remove the model directory itself if empty
+                if (Directory.Exists(directory) && !Directory.EnumerateFileSystemEntries(directory).Any())
+                {
+                    Directory.Delete(directory);
+                    _logger.LogDebug("Removed empty directory: {Dir}", directory);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to clean up empty directories under {Dir}", directory);
+        }
+    }
 }

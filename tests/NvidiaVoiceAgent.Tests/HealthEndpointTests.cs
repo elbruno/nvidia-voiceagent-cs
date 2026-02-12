@@ -78,4 +78,24 @@ public class HealthEndpointTests : IClassFixture<WebApplicationFactoryFixture>
         // Assert
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
     }
+
+    [Fact]
+    public async Task ModelsDelete_UnknownModel_Returns404()
+    {
+        // Act
+        var response = await _client.DeleteAsync("/api/models/nonexistent-model");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task ModelsDelete_KnownModel_Returns200()
+    {
+        // Act - delete Parakeet model (may or may not be on disk, but endpoint returns 200 either way)
+        var response = await _client.DeleteAsync("/api/models/Parakeet-TDT-0.6B-V2");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 }

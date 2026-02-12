@@ -120,6 +120,24 @@ app.MapPost("/api/models/{name}/download", async (string name, IModelRegistry re
     return Results.Json(new { error = result.ErrorMessage }, statusCode: 500);
 });
 
+// Delete a specific model and all its related files
+app.MapDelete("/api/models/{name}", (string name, IModelRegistry registry, IModelDownloadService modelDownload) =>
+{
+    var allModels = registry.GetAllModels();
+    var model = allModels.FirstOrDefault(m => m.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+    if (model == null)
+    {
+        return Results.NotFound(new { error = $"Model '{name}' not found." });
+    }
+
+    var deleted = modelDownload.DeleteModel(model.Type);
+    if (deleted)
+    {
+        return Results.Ok(new { message = $"Model '{name}' deleted successfully." });
+    }
+    return Results.Ok(new { message = $"Model '{name}' was not found on disk." });
+});
+
 // WebSocket endpoint for voice processing
 app.Map("/ws/voice", async (HttpContext context, VoiceWebSocketHandler handler) =>
 {
