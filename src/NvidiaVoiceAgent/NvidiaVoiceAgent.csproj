@@ -1,29 +1,26 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- ASP.NET Core -->
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
     
     <!-- ML/AI Model Inference -->
-    <PackageReference Include="TorchSharp" Version="0.102.0" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.17.0" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.17.0" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.17.0" />
+    <PackageReference Include="TorchSharp" Version="0.102.6" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.20.1" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.20.1" />
     
     <!-- Audio Processing -->
     <PackageReference Include="NAudio" Version="2.2.1" />
     
-    <!-- JSON Handling -->
-    <PackageReference Include="System.Text.Json" Version="8.0.5" />
-    
     <!-- Logging -->
-    <PackageReference Include="Serilog.AspNetCore" Version="8.0.0" />
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
   </ItemGroup>
 
 </Project>
