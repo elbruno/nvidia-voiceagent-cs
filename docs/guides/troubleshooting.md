@@ -100,7 +100,7 @@ dotnet build
 
 **Solutions:**
 
-1. Restart the app — it will detect the missing file and re-download all model files automatically (using `forceDownload` to overwrite any existing partial files).
+1. Restart the app — it will detect the missing file and re-download all model files automatically. Existing files are deleted before re-downloading to avoid Windows file-locking issues.
 
 2. If auto-download still fails, delete the incomplete cache and restart:
 
@@ -118,6 +118,26 @@ dotnet build
      --include "onnx/encoder.onnx_data" \
      --local-dir NvidiaVoiceAgent/model-cache/parakeet-tdt-0.6b
    ```
+
+---
+
+## Model Availability Issues
+
+### Download button shows "Coming Soon"
+
+**Symptom:** The Models panel shows a "Coming Soon" badge instead of a download button for TTS, Vocoder, or LLM models.
+
+**Explanation:** These models are registered as placeholders in the model registry with `IsAvailableForDownload = false`. Their HuggingFace repositories don't exist yet. The download endpoint returns `400 Bad Request` if you try to download them via the API.
+
+**Status:** These models will be made available in future releases. Only the ASR model (Parakeet-TDT) is currently downloadable.
+
+### Mel bin mismatch error
+
+**Symptom:** ONNX Runtime throws a shape mismatch error during inference (e.g., expected dimension 128 but got 80).
+
+**Cause:** The mel-spectrogram extractor was configured with a different number of mel bins than the ONNX model expects. The Parakeet-TDT model uses 128 mel bins.
+
+**Solution:** This is handled automatically. `AsrService.ConfigureMelExtractorFromModel()` reads the model's `InputMetadata` after loading and reconfigures the `MelSpectrogramExtractor` if the expected mel dimension differs from the current setting. If you see this error, ensure you're using the latest code — the auto-detection was added to prevent this mismatch.
 
 ---
 

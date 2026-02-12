@@ -16,7 +16,7 @@ Browser WAV Audio (Binary WebSocket message)
 2. AudioProcessor.Resample()           — Convert to 16kHz mono if needed
     │
     ▼
-3. MelSpectrogramExtractor.Extract()   — 80-mel filterbank spectrogram
+3. MelSpectrogramExtractor.Extract()   — 128-mel filterbank spectrogram
     │
     ▼
 4. MelSpectrogramExtractor.Normalize() — Mean/std normalization
@@ -69,7 +69,7 @@ This handles common conversions like 44100 Hz → 16000 Hz (browser default → 
 
 ## Mel-Spectrogram Extraction
 
-`MelSpectrogramExtractor` converts raw audio samples into the mel-spectrogram features required by the Parakeet-TDT model.
+`MelSpectrogramExtractor` converts raw audio samples into the mel-spectrogram features required by the Parakeet-TDT model. The extractor is configurable via constructor parameters and defaults to values matching the Parakeet-TDT model spec.
 
 ### Parameters (Parakeet-TDT spec)
 
@@ -83,14 +83,14 @@ This handles common conversions like 44100 Hz → 16000 Hz (browser default → 
 | Window function | Hann |
 | Normalization | Mean = -4.0, StdDev = 4.0 |
 
-> **Note:** The mel bin count is auto-detected from the ONNX model's input metadata at load time. The extractor defaults to 128 bins but will reconfigure itself if the model expects a different value.
+> **Note:** The mel bin count is auto-detected from the ONNX model’s input metadata at load time. After loading the ONNX session, `AsrService.ConfigureMelExtractorFromModel()` reads `_session.InputMetadata` to find the expected mel dimension. If the model expects a different count than the extractor’s current setting, a new `MelSpectrogramExtractor` is created with the correct value. This ensures the extractor always matches the model.
 
 ### Processing Steps
 
 1. **Windowing** — Apply Hann window to overlapping frames
 2. **FFT** — Radix-2 Cooley-Tukey FFT (power of 2 zero-padded)
 3. **Power Spectrum** — Compute magnitude squared of FFT bins
-4. **Mel Filterbank** — Apply 80 triangular mel-scale filters
+4. **Mel Filterbank** — Apply 128 triangular mel-scale filters
 5. **Log Transform** — `log(max(value, 1e-10))` to convert to log-mel scale
 6. **Normalization** — `(logMel - mean) / stdDev` with mean=-4.0, std=4.0
 
@@ -126,7 +126,7 @@ The service logs which execution provider was used. Check logs for `"CUDA execut
 
 ### Inference Pipeline
 
-1. **Input preparation**: Mel spectrogram → tensor `[1, 80, T]` (batch, mels, time frames)
+1. **Input preparation**: Mel spectrogram → tensor `[1, 128, T]` (batch, mels, time frames)
 2. **Length tensor**: `[T]` as int64
 3. **Dynamic input binding**: Reads `_session.InputMetadata` to match actual model input names and types
 4. **Run**: `_session.Run(inputs)` → output tensor
@@ -175,9 +175,21 @@ new ModelInfo {
     PrimaryFile = "onnx/encoder.onnx",
     AdditionalFiles = ["onnx/encoder.onnx_data", "onnx/decoder.onnx"],
     IsRequired = true,
+    IsAvailableForDownload = true,  // false for placeholder models
     ExpectedSizeBytes = 1_310_720_000
 }
 ```
+
+The registry includes four model entries:
+
+| Model | Type | Required | Available for Download |
+|-------|------|----------|------------------------|
+| Parakeet-TDT-0.6B-V2 | ASR | Yes | Yes |
+| FastPitch | TTS | No | No (coming soon) |
+| HiFiGAN | Vocoder | No | No (coming soon) |
+| TinyLlama | LLM | No | No (coming soon) |
+
+Placeholder models have `IsAvailableForDownload = false`. The UI shows "Coming Soon" badges for these, and the download endpoint returns `400 Bad Request`.
 
 ### Download Flow
 
@@ -188,6 +200,7 @@ EnsureModelsAsync()
     │   ├── Check cache: primary file + all additional files exist?
     │   │   ├── All present → OnModelCached() callback → skip
     │   │   └── Any missing → Download from HuggingFace
+    │   │       ├── Delete existing files first (Windows workaround)
     │   │       ├── Download PrimaryFile
     │   │       ├── Download each AdditionalFile
     │   │       └── Report progress via IProgressReporter
@@ -197,6 +210,8 @@ EnsureModelsAsync()
 ```
 
 > **Note:** `IsModelAvailable()` verifies that **all** files (primary + additional) exist, not just the main `.onnx` file. This prevents partial downloads from being treated as complete.
+
+> **Windows workaround:** Before downloading, existing files are deleted first using a `DeleteExistingFile()` helper. This avoids `IOException` errors from HuggingFace Hub’s `ChmodAndReplace` operation, which can fail on Windows when trying to overwrite locked or in-use files.
 
 ### Progress Reporting
 

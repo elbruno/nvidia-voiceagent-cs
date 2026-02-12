@@ -49,7 +49,8 @@ Returns detailed status for every registered model.
     "repo_id": "onnx-community/parakeet-tdt-0.6b-v2-ONNX",
     "local_path": "D:\\labs\\nvidia-voiceagent-cs\\NvidiaVoiceAgent\\model-cache\\parakeet-tdt-0.6b\\onnx\\encoder.onnx",
     "expected_size_mb": 1250.0,
-    "is_required": true
+    "is_required": true,
+    "is_available_for_download": true
   }
 ]
 ```
@@ -63,6 +64,7 @@ Returns detailed status for every registered model.
 | `local_path` | string? | Absolute path on disk (null if not downloaded) |
 | `expected_size_mb` | number | Expected download size in MB |
 | `is_required` | boolean | Whether the model is required for the app to function |
+| `is_available_for_download` | boolean | Whether the model can be downloaded (false for placeholder/coming-soon models) |
 
 The registry includes four models: **Parakeet-TDT (ASR)**, **FastPitch (TTS)**, **HiFiGAN (Vocoder)**, and **TinyLlama (LLM)**. Only the ASR model is required; the others are optional and show download buttons in the UI.
 
@@ -85,6 +87,7 @@ Trigger download of a specific model by name.
 
 **Error Responses:**
 
+- `400 Bad Request` — Model is not available for download (placeholder/coming-soon model)
 - `404 Not Found` — Model name not recognized
 - `500 Internal Server Error` — Download failed (network, disk, etc.)
 

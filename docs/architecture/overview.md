@@ -160,6 +160,10 @@ Every service checks model availability at init time. If no model is found:
 - Returns simulated responses (e.g., mock transcripts based on audio duration)
 - Allows full UI and WebSocket development without models
 
+### Model Availability Guard
+
+Models in the registry have an `IsAvailableForDownload` flag. Placeholder models (TTS, Vocoder, LLM) are marked `IsAvailableForDownload = false` because their HuggingFace repos don't exist yet. The UI shows "Coming Soon" badges for these models instead of download buttons, and the `POST /api/models/{name}/download` endpoint returns `400 Bad Request` if the model isn't available for download.
+
 ### Progress Reporting Bridge
 
 ModelHub defines `IProgressReporter`. The web app overrides it with `WebProgressReporter` which:

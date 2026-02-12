@@ -6,7 +6,7 @@ A real-time voice agent built with **ASP.NET Core 10** that performs Speech-to-T
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
-[![Tests](https://img.shields.io/badge/tests-68%20passed-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
+[![Tests](https://img.shields.io/badge/tests-69%20passed-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
 
 ## Features
 
@@ -47,7 +47,7 @@ Open **<http://localhost:5003>** in your browser. The app auto-downloads the ASR
 dotnet test
 ```
 
-68 tests across 3 test projects (Web, Core, ModelHub) — all passing.
+69 tests across 3 test projects (Web, Core, ModelHub) — all passing.
 
 ## Configuration
 

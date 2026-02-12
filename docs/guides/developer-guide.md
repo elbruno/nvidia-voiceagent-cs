@@ -19,7 +19,7 @@ cd NvidiaVoiceAgent
 dotnet run
 # → http://localhost:5003
 
-# Run all tests (68 tests across 3 projects)
+# Run all tests (69 tests across 3 projects)
 dotnet test
 ```
 
