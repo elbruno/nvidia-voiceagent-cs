@@ -341,6 +341,16 @@
             opacity: 0.4;
             cursor: not-allowed;
         }
+        .model-coming-soon {
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            border: 1px solid #555;
+            background: rgba(100, 100, 100, 0.15);
+            color: #888;
+            white-space: nowrap;
+        }
         .model-card-progress {
             margin-top: 0.35rem;
             display: none;
@@ -731,7 +741,8 @@
                     : m.status === 'downloading' ? '📥 Downloading'
                     : '❌ Not Downloaded';
                 const sizeMb = m.expected_size_mb.toFixed(1);
-                const showDownloadBtn = m.status !== 'downloaded';
+                const showDownloadBtn = m.status !== 'downloaded' && m.is_available_for_download;
+                const showComingSoon = m.status !== 'downloaded' && !m.is_available_for_download;
 
                 card.innerHTML = `
                     <div class="model-card-row">
@@ -744,6 +755,7 @@
                         </div>
                         <div class="model-card-status">
                             ${showDownloadBtn ? `<button class="model-download-btn" id="model-dl-btn-${idx}" onclick="downloadModel('${esc(m.name)}', ${idx})">⬇ Download</button>` : ''}
+                            ${showComingSoon ? '<span class="model-coming-soon">🔜 Coming Soon</span>' : ''}
                             <span class="status-badge ${statusClass}" id="model-badge-${idx}">${statusLabel}</span>
                         </div>
                     </div>

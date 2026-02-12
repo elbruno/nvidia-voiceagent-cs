@@ -90,7 +90,8 @@ app.MapGet("/api/models", (IModelRegistry registry, IModelDownloadService modelD
             RepoId = m.RepoId,
             LocalPath = localPath != null ? Path.GetFullPath(localPath) : null,
             ExpectedSizeMb = m.ExpectedSizeBytes / (1024.0 * 1024.0),
-            IsRequired = m.IsRequired
+            IsRequired = m.IsRequired,
+            IsAvailableForDownload = m.IsAvailableForDownload
         };
     }).ToList();
     return results;
@@ -104,6 +105,11 @@ app.MapPost("/api/models/{name}/download", async (string name, IModelRegistry re
     if (model == null)
     {
         return Results.NotFound(new { error = $"Model '{name}' not found." });
+    }
+
+    if (!model.IsAvailableForDownload)
+    {
+        return Results.Json(new { error = $"Model '{name}' is not yet available for download (coming soon)." }, statusCode: 400);
     }
 
     var result = await modelDownload.DownloadModelAsync(model.Type);

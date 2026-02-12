@@ -36,7 +36,8 @@ public class ModelRegistry : IModelRegistry
                 ExpectedSizeBytes = 85_000_000L, // ~80 MB (placeholder)
                 LocalDirectory = "fastpitch-en",
                 IsRequired = false,
-                AdditionalFiles = []
+                AdditionalFiles = [],
+                IsAvailableForDownload = false
             },
             new ModelInfo
             {
@@ -47,7 +48,8 @@ public class ModelRegistry : IModelRegistry
                 ExpectedSizeBytes = 55_000_000L, // ~52 MB (placeholder)
                 LocalDirectory = "hifigan-en",
                 IsRequired = false,
-                AdditionalFiles = []
+                AdditionalFiles = [],
+                IsAvailableForDownload = false
             },
             new ModelInfo
             {
@@ -58,7 +60,8 @@ public class ModelRegistry : IModelRegistry
                 ExpectedSizeBytes = 2_200_000_000L, // ~2.05 GB (placeholder)
                 LocalDirectory = "tinyllama-1.1b",
                 IsRequired = false,
-                AdditionalFiles = []
+                AdditionalFiles = [],
+                IsAvailableForDownload = false
             }
         };
     }

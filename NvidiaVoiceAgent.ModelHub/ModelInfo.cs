@@ -44,4 +44,10 @@ public class ModelInfo
     /// Additional files to download alongside the main model file.
     /// </summary>
     public string[] AdditionalFiles { get; init; } = [];
+
+    /// <summary>
+    /// Whether the model's HuggingFace repo and files are available for download.
+    /// Set to false for placeholder/future models whose ONNX exports don't exist yet.
+    /// </summary>
+    public bool IsAvailableForDownload { get; init; } = true;
 }
