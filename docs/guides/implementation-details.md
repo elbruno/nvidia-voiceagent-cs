@@ -33,6 +33,8 @@ Browser WAV Audio (Binary WebSocket message)
 
 All stages run in `NvidiaVoiceAgent.Core`. The web app's `VoiceWebSocketHandler` orchestrates the pipeline and sends responses back over WebSocket.
 
+> **Important:** The handler calls `AsrService.TranscribeAsync()` directly without checking `IsModelLoaded` first. `TranscribeAsync` handles lazy loading internally — loading the ONNX session on the first call. This avoids bypassing the lazy-load mechanism with a premature `IsModelLoaded` gate.
+
 ## Audio Processing (AudioProcessor)
 
 ### WAV Decoding
@@ -103,6 +105,8 @@ The FFT is implemented from scratch (no external DSP library) for zero-dependenc
 3. Recursively search for any `.onnx` file in the directory
 4. Query `IModelDownloadService.GetModelPath(ModelType.Asr)` for ModelHub-cached files
 5. If nothing found → enter Mock Mode
+
+Once found, the path is converted to an absolute path via `Path.GetFullPath()` before passing to `InferenceSession`. This ensures ONNX Runtime can resolve external data files (e.g., `encoder.onnx_data`) relative to the model file's directory.
 
 ### GPU/CPU Fallback
 
@@ -179,9 +183,9 @@ new ModelInfo {
 EnsureModelsAsync()
     │
     ├── For each required model:
-    │   ├── Check cache: model-cache/{subfolder}/{primaryFile}
-    │   │   ├── Exists → OnModelCached() callback → skip
-    │   │   └── Missing → Download from HuggingFace
+    │   ├── Check cache: primary file + all additional files exist?
+    │   │   ├── All present → OnModelCached() callback → skip
+    │   │   └── Any missing → Download from HuggingFace
     │   │       ├── Download PrimaryFile
     │   │       ├── Download each AdditionalFile
     │   │       └── Report progress via IProgressReporter
@@ -189,6 +193,8 @@ EnsureModelsAsync()
     │
     └── Log summary: "Model check complete: N/N models ready"
 ```
+
+> **Note:** `IsModelAvailable()` verifies that **all** files (primary + additional) exist, not just the main `.onnx` file. This prevents partial downloads from being treated as complete.
 
 ### Progress Reporting
 

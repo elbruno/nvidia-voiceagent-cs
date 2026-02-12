@@ -89,6 +89,8 @@ public class AsrService : IAsrService, IDisposable
                 return;
             }
 
+            // Convert to absolute path so ONNX Runtime can resolve external data files
+            modelPath = Path.GetFullPath(modelPath);
             _logger.LogInformation("Loading ASR model from {ModelPath}", modelPath);
 
             // Try GPU first, fall back to CPU

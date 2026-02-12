@@ -206,6 +206,26 @@ public class ModelDownloadService : IModelDownloadService
     /// <inheritdoc />
     public bool IsModelAvailable(ModelType modelType)
     {
-        return GetModelPath(modelType) != null;
+        var model = _registry.GetModel(modelType);
+        if (model == null) return false;
+
+        // Primary file must exist
+        if (GetModelPath(modelType) == null) return false;
+
+        // All additional files must also exist
+        var localDir = Path.Combine(_options.ModelCachePath, model.LocalDirectory);
+        foreach (var additionalFile in model.AdditionalFiles)
+        {
+            var filePath = Path.Combine(localDir, additionalFile);
+            if (!File.Exists(filePath))
+            {
+                _logger.LogWarning(
+                    "Model {ModelName} is missing required file: {File}",
+                    model.Name, additionalFile);
+                return false;
+            }
+        }
+
+        return true;
     }
 }

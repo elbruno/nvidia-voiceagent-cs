@@ -237,14 +237,14 @@ public class VoiceWebSocketHandler
 
     private async Task<string> RunAsrAsync(float[] samples, CancellationToken cancellationToken)
     {
-        if (_asrService != null && _asrService.IsModelLoaded)
+        if (_asrService != null)
         {
             return await _asrService.TranscribeAsync(samples, cancellationToken);
         }
 
-        // TODO: Implement actual ASR with Parakeet-TDT model via ONNX Runtime
-        // Mock response for testing
-        await Task.Delay(100, cancellationToken); // Simulate processing time
+        // Fallback when ASR service is not registered in DI
+        _logger.LogWarning("ASR service not available, returning mock transcript");
+        await Task.Delay(100, cancellationToken);
         return "Hello, this is a test transcription.";
     }
 

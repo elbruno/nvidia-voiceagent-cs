@@ -84,6 +84,39 @@ dotnet build
 
 **Explanation:** This is normal. The ASR model uses lazy loading — the ONNX session is only created on the first transcription request. Send audio through the voice WebSocket to trigger model loading.
 
+### ASR always returns mock transcript
+
+**Symptom:** Every transcription returns `"Hello, this is a test transcription."` even though the model is downloaded.
+
+**Cause:** If `VoiceWebSocketHandler.RunAsrAsync()` checks `_asrService.IsModelLoaded` before calling `TranscribeAsync()`, the check will always be `false` on the first call because `AsrService` uses lazy loading (the ONNX session is created inside `TranscribeAsync()`). This causes the handler to skip the real service and return the hardcoded mock.
+
+**Fix:** The handler should call `TranscribeAsync()` directly when `_asrService` is registered, without gating on `IsModelLoaded`. `TranscribeAsync` handles lazy loading internally and falls back to mock mode only if no model files exist on disk.
+
+### "file_size: The system cannot find the file specified: encoder.onnx_data"
+
+**Symptom:** ONNX Runtime throws `RuntimeException` during model initialization, complaining about a missing `encoder.onnx_data` file.
+
+**Cause:** The `encoder.onnx` model uses an external data file (`encoder.onnx_data`, ~2.48 GB) for its weights. If the initial download was interrupted or only the primary `.onnx` file was cached, the external data file will be missing. The availability check now verifies all required files (primary + additional), so a re-download will be triggered automatically.
+
+**Solutions:**
+
+1. Delete the incomplete model cache and restart the app to trigger a fresh download:
+
+   ```bash
+   # Windows
+   Remove-Item -Recurse -Force NvidiaVoiceAgent/model-cache/parakeet-tdt-0.6b
+   cd NvidiaVoiceAgent && dotnet run
+   ```
+
+2. Manually download the missing file:
+
+   ```bash
+   pip install huggingface-hub
+   huggingface-cli download onnx-community/parakeet-tdt-0.6b-v2-ONNX \
+     --include "onnx/encoder.onnx_data" \
+     --local-dir NvidiaVoiceAgent/model-cache/parakeet-tdt-0.6b
+   ```
+
 ---
 
 ## GPU / CUDA Issues
