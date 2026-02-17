@@ -9,7 +9,7 @@ namespace NvidiaVoiceAgent.Core.Adapters;
 
 /// <summary>
 /// Model adapter for NVIDIA Parakeet-TDT ASR models.
-/// Handles Parakeet-specific preprocessing, padding, and CTC decoding.
+/// Handles Parakeet-specific preprocessing, padding, CTC decoding, and optional audio chunking.
 /// </summary>
 public class ParakeetTdtAdapter : IAsrModelAdapter
 {
@@ -20,9 +20,12 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
     private InferenceSession? _session;
     private MelSpectrogramExtractor? _melExtractor;
     private string[]? _vocabulary;
+    private IAudioChunkingStrategy? _chunker;
+    private IAudioMerger? _merger;
     private bool _isLoaded;
     private bool _disposed;
     private bool _cudaAvailable;
+    private bool _chunkingEnabled;
 
     public string ModelName => _specification?.ModelName ?? "unknown";
     public bool IsLoaded => _isLoaded;
@@ -103,6 +106,27 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
                 }
             }
 
+            // Initialize chunking if enabled
+            if (_specification.Chunking?.Enabled == true)
+            {
+                var chunkingConfig = _specification.Chunking;
+                _chunker = new OverlappingAudioChunker(
+                    chunkingConfig.ChunkSizeSeconds,
+                    chunkingConfig.OverlapSeconds,
+                    _logger);
+                _merger = new TranscriptMerger(_logger);
+                _chunkingEnabled = true;
+
+                _logger.LogInformation(
+                    "Audio chunking enabled: chunk_size={ChunkSize}s, overlap={Overlap}s",
+                    chunkingConfig.ChunkSizeSeconds, chunkingConfig.OverlapSeconds);
+            }
+            else
+            {
+                _chunkingEnabled = false;
+                _logger.LogInformation("Audio chunking disabled");
+            }
+
             _isLoaded = true;
             _logger.LogInformation("Parakeet-TDT adapter loaded successfully");
         }
@@ -145,8 +169,83 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
             throw new InvalidOperationException("Model not loaded. Call LoadAsync first.");
         }
 
+        // Check if audio is long enough to require chunking
+        const int maxFramesBeforeChunking = 6000;  // ~60 seconds at 16kHz
+        if (_chunkingEnabled && _chunker != null && _merger != null &&
+            audioSamples.Length > maxFramesBeforeChunking * 160)  // Convert frames to samples
+        {
+            return await TranscribeWithChunkingAsync(audioSamples, cancellationToken);
+        }
+
+        // Standard path: process as single chunk
         var melSpec = PrepareInput(audioSamples);
         return await InferAsync(melSpec, cancellationToken);
+    }
+
+    /// <summary>
+    /// Transcribe audio using chunking for long-form inputs.
+    /// </summary>
+    private async Task<string> TranscribeWithChunkingAsync(float[] audioSamples, CancellationToken cancellationToken)
+    {
+        if (_chunker == null || _merger == null || _specification == null)
+        {
+            throw new InvalidOperationException("Chunking not properly initialized");
+        }
+
+        const int sampleRate = 16000;
+
+        // Split audio into chunks
+        var chunks = _chunker.ChunkAudio(audioSamples, sampleRate);
+
+        if (chunks.Length == 0)
+        {
+            return "[No audio chunks created]";
+        }
+
+        if (chunks.Length == 1)
+        {
+            // Single chunk: process normally (should not happen in this code path)
+            var melSpec = PrepareInput(chunks[0].Samples);
+            return await InferAsync(melSpec, cancellationToken);
+        }
+
+        // Process each chunk
+        _logger.LogInformation("Processing {ChunkCount} chunks with chunking strategy", chunks.Length);
+        var transcripts = new string[chunks.Length];
+
+        for (int i = 0; i < chunks.Length; i++)
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var chunk = chunks[i];
+                _logger.LogDebug("Processing chunk {Index}/{Total}: {SampleCount} samples",
+                    i + 1, chunks.Length, chunk.Samples.Length);
+
+                var melSpec = PrepareInput(chunk.Samples);
+                transcripts[i] = await InferAsync(melSpec, cancellationToken);
+
+                _logger.LogDebug("Chunk {Index} transcript: '{Transcript}' ({Length} chars)",
+                    i + 1, transcripts[i], transcripts[i]?.Length ?? 0);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to process chunk {Index}", i + 1);
+                transcripts[i] = "[Error processing chunk]";
+            }
+        }
+
+        // Merge transcripts using overlap detection
+        string merged = _chunker.MergeTranscripts(transcripts, chunks);
+
+        // Apply deduplication via merger
+        float overlapFraction = _specification.Chunking?.OverlapSeconds ?? 2f / (_specification.Chunking?.ChunkSizeSeconds ?? 50f);
+        merged = _merger.MergeTranscripts(transcripts, overlapFraction);
+
+        _logger.LogInformation("Chunked transcription complete: {Length} chars", merged.Length);
+
+        return merged;
     }
 
     public async Task<(string transcript, float confidence)> TranscribeWithConfidenceAsync(
@@ -188,9 +287,10 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
         }
         if (numFrames > maxFrames)
         {
-            _logger.LogWarning("Audio too long: {Frames} frames (maximum {Max}). Duration: {Duration:F2}s",
-                numFrames, maxFrames, numFrames * 0.01);  // 10ms per frame
-            return "[Audio too long for transcription]";
+            string chunkingMsg = _chunkingEnabled ? " Enable chunking in model configuration or reduce audio length." : "";
+            _logger.LogWarning("Audio too long: {Frames} frames (maximum {Max}). Duration: {Duration:F2}s.{ChunkingMsg}",
+                numFrames, maxFrames, numFrames * 0.01, chunkingMsg);  // 10ms per frame
+            return $"[Audio too long for transcription (max {maxFrames} frames).{chunkingMsg}]";
         }
 
         // Apply padding according to specification
@@ -404,6 +504,8 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
 
         _session?.Dispose();
         _loadLock?.Dispose();
+        (_chunker as IDisposable)?.Dispose();
+        (_merger as IDisposable)?.Dispose();
         _disposed = true;
 
         GC.SuppressFinalize(this);
