@@ -920,6 +920,8 @@
                 const showDownloadBtn = m.status !== 'downloaded' && m.isAvailableForDownload;
                 const showComingSoon = m.status !== 'downloaded' && !m.isAvailableForDownload;
                 const showDeleteBtn = m.status === 'downloaded';
+                const requiresAuth = m.requiresAuthentication || false;
+                const showAuthWarning = requiresAuth && m.status !== 'downloaded';
 
                 card.innerHTML = `
                     <div class="model-card-row">
@@ -928,6 +930,7 @@
                             <div class="model-card-meta">
                                 <a href="https://huggingface.co/${esc(m.repoId)}" target="_blank" rel="noopener">${esc(m.repoId)}</a>
                                 &nbsp;·&nbsp;${sizeMb} MB${m.isRequired ? ' · <strong>required</strong>' : ''}
+                                ${requiresAuth ? ' · <span style="color:var(--warning)">🔐 Requires HF Token</span>' : ''}
                             </div>
                         </div>
                         <div class="model-card-status">
@@ -937,6 +940,13 @@
                             <span class="status-badge ${statusClass}" id="model-badge-${idx}">${statusLabel}</span>
                         </div>
                     </div>
+                    ${showAuthWarning ? `
+                    <div style="background:rgba(255,183,77,0.1);border:1px solid var(--warning);border-radius:4px;padding:0.5rem;margin-top:0.5rem;font-size:0.75rem;line-height:1.4;">
+                        <strong>⚠️ Authentication Required</strong><br/>
+                        This gated model requires a HuggingFace token. 
+                        <a href="https://github.com/elbruno/nvidia-voiceagent-cs/blob/main/docs/guides/huggingface-token-setup.md" target="_blank" style="color:var(--accent-secondary)">Setup guide</a>
+                    </div>
+                    ` : ''}
                     <div class="model-card-path ${m.localPath ? 'visible' : ''}" id="model-path-${idx}">${m.localPath ? esc(m.localPath) : ''}</div>
                     <div class="model-card-progress" id="model-progress-${idx}">
                         <div class="progress-bar-bg"><div class="progress-bar-fill" id="model-bar-${idx}"></div></div>
