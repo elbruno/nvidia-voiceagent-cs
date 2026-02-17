@@ -10,6 +10,6 @@
     "AutoDownload": true,
     "UseInt8Quantization": true,
     "ModelCachePath": "model-cache",
-    "HuggingFaceToken": null
+    "HuggingFaceToken": "hf_your_actual_token_here"
   }
 }
