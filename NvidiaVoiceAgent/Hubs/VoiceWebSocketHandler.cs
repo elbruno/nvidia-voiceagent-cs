@@ -27,6 +27,7 @@ public class VoiceWebSocketHandler
     private readonly IAudioProcessor? _audioProcessor;
     private readonly AudioStreamBuffer _audioStreamBuffer;
     private readonly IVoiceActivityDetector _vad;
+    private readonly IDebugAudioRecorder? _debugRecorder;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -87,7 +88,8 @@ public class VoiceWebSocketHandler
         IAsrService? asrService = null,
         ITtsService? ttsService = null,
         ILlmService? llmService = null,
-        IAudioProcessor? audioProcessor = null)
+        IAudioProcessor? audioProcessor = null,
+        IDebugAudioRecorder? debugRecorder = null)
     {
         _logger = logger;
         _audioStreamBuffer = audioStreamBuffer;
@@ -97,6 +99,7 @@ public class VoiceWebSocketHandler
         _ttsService = ttsService;
         _llmService = llmService;
         _audioProcessor = audioProcessor;
+        _debugRecorder = debugRecorder;
     }
 
     /// <summary>
@@ -106,9 +109,10 @@ public class VoiceWebSocketHandler
     public async Task HandleAsync(WebSocket webSocket, CancellationToken cancellationToken)
     {
         SessionLogWriter? sessionLog = null;
+        var sessionId = Guid.NewGuid().ToString("N");
+        
         try
         {
-            var sessionId = Guid.NewGuid().ToString("N");
             var logDirectory = Path.Combine(Directory.GetCurrentDirectory(), "logs", "sessions");
             var logFileName = $"voice-session_{DateTimeOffset.Now:yyyyMMdd_HHmmss}_{sessionId}.log";
             sessionLog = SessionLogWriter.Create(logDirectory, logFileName);
@@ -130,6 +134,18 @@ public class VoiceWebSocketHandler
 
         var sessionState = new VoiceSessionState();
         var buffer = new byte[256 * 1024]; // 256KB buffer for audio chunks
+        
+        // Initialize debug audio recording if enabled
+        if (_debugRecorder?.IsEnabled == true)
+        {
+            await _debugRecorder.StartSessionAsync(
+                sessionId,
+                sessionState.SmartMode,
+                sessionState.SmartModel,
+                sessionState.RealtimeMode);
+            _logger.LogInformation("Debug audio recording started for session {SessionId}", sessionId);
+            await BroadcastLogAsync($"Debug audio recording enabled for session {sessionId}", "info", sessionLog);
+        }
         var messageBuffer = new MemoryStream();
 
         // Realtime mode: subscribe to pause detection events
@@ -141,7 +157,7 @@ public class VoiceWebSocketHandler
                 var pendingAudio = _audioStreamBuffer.GetAndClear();
                 if (pendingAudio.Length > 0)
                 {
-                    await ProcessAudioChunkAsync(webSocket, pendingAudio, sessionState, sessionLog, cancellationToken);
+                    await ProcessAudioChunkAsync(webSocket, pendingAudio, sessionState, sessionId, sessionLog, null, cancellationToken);
                 }
             };
             _audioStreamBuffer.OnPauseDetected += pauseHandler;
@@ -177,7 +193,7 @@ public class VoiceWebSocketHandler
                 }
                 else if (result.MessageType == WebSocketMessageType.Binary)
                 {
-                    await HandleBinaryMessageAsync(webSocket, messageData, sessionState, sessionLog, cancellationToken);
+                    await HandleBinaryMessageAsync(webSocket, messageData, sessionState, sessionId, sessionLog, cancellationToken);
                 }
             }
         }
@@ -205,6 +221,12 @@ public class VoiceWebSocketHandler
                 _audioStreamBuffer.OnPauseDetected -= pauseHandler;
             }
             _audioStreamBuffer.Clear();
+
+            // End debug session if enabled
+            if (_debugRecorder?.IsEnabled == true)
+            {
+                await _debugRecorder.EndSessionAsync(sessionId);
+            }
 
             if (sessionLog != null)
             {
@@ -300,6 +322,7 @@ public class VoiceWebSocketHandler
         WebSocket webSocket,
         byte[] audioData,
         VoiceSessionState sessionState,
+        string sessionId,
         SessionLogWriter? sessionLog,
         CancellationToken cancellationToken)
     {
@@ -324,7 +347,7 @@ public class VoiceWebSocketHandler
             else
             {
                 // Standard mode: Process immediately (existing behavior)
-                await ProcessAudioChunkAsync(webSocket, samples, sessionState, sessionLog, cancellationToken);
+                await ProcessAudioChunkAsync(webSocket, samples, sessionState, sessionId, sessionLog, audioData, cancellationToken);
             }
         }
         catch (Exception ex)
@@ -341,11 +364,24 @@ public class VoiceWebSocketHandler
         WebSocket webSocket,
         float[] audioSamples,
         VoiceSessionState sessionState,
+        string sessionId,
         SessionLogWriter? sessionLog,
-        CancellationToken cancellationToken)
+        byte[]? rawAudioData = null,
+        CancellationToken cancellationToken = default)
     {
+        // Increment turn number for this conversation turn
+        sessionState.CurrentTurnNumber++;
+        var turnNumber = sessionState.CurrentTurnNumber;
+
         try
         {
+            // Save incoming audio if debug mode is enabled
+            string? userAudioFile = null;
+            if (_debugRecorder?.IsEnabled == true && rawAudioData != null)
+            {
+                userAudioFile = await _debugRecorder.SaveIncomingAudioAsync(sessionId, turnNumber, rawAudioData);
+            }
+
             // Step 2: Run ASR to get transcript (with confidence for streaming)
             var (transcript, confidence) = await RunAsrPartialAsync(audioSamples, cancellationToken);
             _logger.LogInformation("ASR transcript: {Transcript} (confidence: {Conf})", transcript, confidence);
@@ -417,6 +453,25 @@ public class VoiceWebSocketHandler
             byte[] responseAudio = await RunTtsAsync(responseText, cancellationToken);
             string audioBase64 = Convert.ToBase64String(responseAudio);
             await BroadcastLogAsync($"Generated {responseAudio.Length} bytes of TTS audio", "info", sessionLog);
+
+            // Save outgoing audio if debug mode is enabled
+            string? assistantAudioFile = null;
+            if (_debugRecorder?.IsEnabled == true)
+            {
+                assistantAudioFile = await _debugRecorder.SaveOutgoingAudioAsync(sessionId, turnNumber, responseAudio);
+            }
+
+            // Record conversation turn metadata
+            if (_debugRecorder?.IsEnabled == true)
+            {
+                await _debugRecorder.RecordTurnAsync(
+                    sessionId,
+                    turnNumber,
+                    transcript,
+                    responseText,
+                    userAudioFile,
+                    assistantAudioFile);
+            }
 
             // Step 5: Send final response
             if (sessionState.RealtimeMode)

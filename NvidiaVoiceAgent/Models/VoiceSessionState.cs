@@ -33,4 +33,10 @@ public class VoiceSessionState
     /// Current count of pending audio samples in buffer.
     /// </summary>
     public int PendingAudioSampleCount { get; set; } = 0;
+
+    /// <summary>
+    /// Current conversation turn number (1-indexed).
+    /// Used for debug mode audio recording.
+    /// </summary>
+    public int CurrentTurnNumber { get; set; } = 0;
 }

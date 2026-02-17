@@ -12,6 +12,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<ModelConfig>(
     builder.Configuration.GetSection("ModelConfig"));
 
+// Configure debug mode from appsettings.json
+builder.Services.Configure<DebugModeConfig>(
+    builder.Configuration.GetSection(DebugModeConfig.SectionName));
+
 // Register ModelHub services for automatic model downloading
 builder.Services.AddModelHub(options =>
 {
@@ -27,6 +31,7 @@ builder.Services.AddVoiceAgentCore();
 
 // Register services
 builder.Services.AddSingleton<ILogBroadcaster, LogBroadcaster>();
+builder.Services.AddSingleton<IDebugAudioRecorder, DebugAudioRecorder>();
 
 // Override the default ConsoleProgressReporter with WebProgressReporter
 // to broadcast download progress to WebSocket clients
