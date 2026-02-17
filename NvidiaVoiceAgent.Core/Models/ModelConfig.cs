@@ -26,6 +26,17 @@ public class ModelConfig
     public string LlmModelPath { get; set; } = "models/tinyllama";
 
     /// <summary>
+    /// Path to the PersonaPlex model directory.
+    /// </summary>
+    public string PersonaPlexModelPath { get; set; } = "model-cache/personaplex-7b";
+
+    /// <summary>
+    /// Selected voice embedding for PersonaPlex (e.g., "voice_0", "voice_1", etc.).
+    /// PersonaPlex includes 18 pre-packaged voices.
+    /// </summary>
+    public string PersonaPlexVoice { get; set; } = "voice_0";
+
+    /// <summary>
     /// Enable GPU acceleration for ONNX Runtime.
     /// </summary>
     public bool UseGpu { get; set; } = true;

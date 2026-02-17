@@ -92,7 +92,7 @@ public class ModelRegistryTests
     }
 
     [Fact]
-    public void GetAllModels_ReturnsAllFourTypes()
+    public void GetAllModels_ReturnsAllFiveTypes()
     {
         // Arrange
         var registry = new ModelRegistry(CreateOptions());
@@ -101,8 +101,8 @@ public class ModelRegistryTests
         var models = registry.GetAllModels();
 
         // Assert
-        models.Should().HaveCount(4);
-        models.Select(m => m.Type).Should().Contain(new[] { ModelType.Asr, ModelType.Tts, ModelType.Vocoder, ModelType.Llm });
+        models.Should().HaveCount(5);
+        models.Select(m => m.Type).Should().Contain(new[] { ModelType.Asr, ModelType.Tts, ModelType.Vocoder, ModelType.Llm, ModelType.PersonaPlex });
     }
 
     [Fact]
@@ -162,5 +162,40 @@ public class ModelRegistryTests
         model.AdditionalFiles.Should().Contain("onnx/encoder.onnx_data");
         model.AdditionalFiles.Should().Contain("onnx/decoder.onnx");
         model.AdditionalFiles.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void GetModel_PersonaPlex_ReturnsOptionalModel()
+    {
+        // Arrange
+        var registry = new ModelRegistry(CreateOptions());
+
+        // Act
+        var model = registry.GetModel(ModelType.PersonaPlex);
+
+        // Assert
+        model.Should().NotBeNull();
+        model!.Name.Should().Be("PersonaPlex-7B-v1");
+        model!.RepoId.Should().Be("nvidia/personaplex-7b-v1");
+        model!.Filename.Should().Be("model.safetensors");
+        model!.IsRequired.Should().BeFalse();
+        model!.IsAvailableForDownload.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GetModel_PersonaPlex_HasAllRequiredFiles()
+    {
+        // Arrange - PersonaPlex requires tokenizer and voice embeddings
+        var registry = new ModelRegistry(CreateOptions());
+
+        // Act
+        var model = registry.GetModel(ModelType.PersonaPlex);
+
+        // Assert
+        model.Should().NotBeNull();
+        model!.AdditionalFiles.Should().Contain("tokenizer-e351c8d8-checkpoint125.safetensors");
+        model!.AdditionalFiles.Should().Contain("tokenizer_spm_32k_3.model");
+        model!.AdditionalFiles.Should().Contain("voices.tgz");
+        model!.AdditionalFiles.Should().HaveCount(3);
     }
 }

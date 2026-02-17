@@ -23,5 +23,10 @@ public enum ModelType
     /// <summary>
     /// Large Language Model for smart mode.
     /// </summary>
-    Llm
+    Llm,
+
+    /// <summary>
+    /// PersonaPlex full-duplex speech-to-speech model.
+    /// </summary>
+    PersonaPlex
 }

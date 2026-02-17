@@ -36,9 +36,9 @@ builder.Services.AddSingleton<IProgressReporter, WebProgressReporter>();
 builder.Services.AddSingleton<VoiceWebSocketHandler>();
 builder.Services.AddSingleton<LogsWebSocketHandler>();
 
-// TODO: Register remaining AI services when implementations are ready
+// Note: PersonaPlex LLM service is registered in AddVoiceAgentCore()
+// TODO: Register TTS service when implementation is ready
 // builder.Services.AddSingleton<ITtsService, TtsService>();
-// builder.Services.AddSingleton<ILlmService, LlmService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -64,13 +64,13 @@ if (app.Environment.IsDevelopment())
 }
 
 // Health check endpoint
-app.MapGet("/health", (IAsrService asrService, IModelDownloadService modelDownload) => new HealthStatus
+app.MapGet("/health", (IAsrService asrService, ILlmService? llmService, IModelDownloadService modelDownload) => new HealthStatus
 {
     Status = "healthy",
     AsrLoaded = asrService.IsModelLoaded,
     AsrDownloaded = modelDownload.IsModelAvailable(ModelType.Asr),
     TtsLoaded = false,  // TODO: Check actual service status
-    LlmLoaded = false,
+    LlmLoaded = llmService?.IsModelLoaded ?? false,
     Timestamp = DateTime.UtcNow
 });
 
