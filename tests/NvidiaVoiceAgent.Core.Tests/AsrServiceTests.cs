@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NvidiaVoiceAgent.Core.Adapters;
 using NvidiaVoiceAgent.Core.Models;
 using NvidiaVoiceAgent.Core.Services;
 using NvidiaVoiceAgent.ModelHub;
@@ -26,6 +27,55 @@ public class AsrServiceTests
         _modelConfig = _config.ModelConfig;
     }
 
+    #region Helper Methods
+
+    /// <summary>
+    /// Create an AsrService instance with a ParakeetTdtAdapter for testing.
+    /// </summary>
+    private AsrService CreateAsrService(ModelConfig? config = null, IModelDownloadService? modelDownloadService = null)
+    {
+        var adapterLogger = _config.CreateLogger<ParakeetTdtAdapter>();
+        var adapter = new ParakeetTdtAdapter(adapterLogger);
+        var serviceConfig = config ?? _modelConfig;
+        return new AsrService(_logger, Options.Create(serviceConfig), adapter, modelDownloadService);
+    }
+
+    /// <summary>
+    /// Generate test audio samples (mono, 16kHz).
+    /// </summary>
+    private float[] GenerateTestAudio(float duration)
+    {
+        const int sampleRate = 16000;
+        int sampleCount = (int)(duration * sampleRate);
+        return GenerateTestAudio(sampleCount);
+    }
+
+    /// <summary>
+    /// Generate test audio with specific sample count.
+    /// Creates a simple sine wave with some noise.
+    /// </summary>
+    private float[] GenerateTestAudio(int sampleCount)
+    {
+        var samples = new float[sampleCount];
+        var random = new Random(42); // Fixed seed for reproducibility
+
+        for (int i = 0; i < sampleCount; i++)
+        {
+            // Mix of sine waves at different frequencies (simulate speech formants)
+            float t = i / 16000.0f;
+            float signal = 0.3f * MathF.Sin(2 * MathF.PI * 200 * t)   // F1
+                         + 0.2f * MathF.Sin(2 * MathF.PI * 800 * t)   // F2
+                         + 0.1f * MathF.Sin(2 * MathF.PI * 2400 * t)  // F3
+                         + 0.05f * (float)(random.NextDouble() - 0.5); // Noise
+
+            samples[i] = Math.Clamp(signal, -1.0f, 1.0f);
+        }
+
+        return samples;
+    }
+
+    #endregion
+
     #region Mock Mode Tests
 
     [Fact]
@@ -33,7 +83,7 @@ public class AsrServiceTests
     {
         // Arrange
         var config = new ModelConfig { AsrModelPath = "nonexistent/path" };
-        var service = new AsrService(_logger, Options.Create(config), null);
+        var service = CreateAsrService(config);
         var audioSamples = GenerateTestAudio(duration: 1.0f);
 
         // Act
@@ -49,7 +99,7 @@ public class AsrServiceTests
     {
         // Arrange
         var config = new ModelConfig { AsrModelPath = "nonexistent/path" };
-        var service = new AsrService(_logger, Options.Create(config), null);
+        var service = CreateAsrService(config);
         var audioSamples = GenerateTestAudio(duration: 0.1f); // Too short
 
         // Act
@@ -64,7 +114,7 @@ public class AsrServiceTests
     {
         // Arrange
         var config = new ModelConfig { AsrModelPath = "nonexistent/path" };
-        var service = new AsrService(_logger, Options.Create(config), null);
+        var service = CreateAsrService(config);
         var audioSamples = GenerateTestAudio(duration: 1.0f);
 
         // Act
@@ -89,7 +139,7 @@ public class AsrServiceTests
             return;
         }
 
-        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
+        var service = CreateAsrService();
 
         // Act
         await service.LoadModelAsync();
@@ -107,7 +157,7 @@ public class AsrServiceTests
             return;
         }
 
-        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
+        var service = CreateAsrService();
         await service.LoadModelAsync();
         var audioSamples = GenerateTestAudio(duration: 1.0f);
 
@@ -133,7 +183,7 @@ public class AsrServiceTests
             return;
         }
 
-        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
+        var service = CreateAsrService();
         await service.LoadModelAsync();
 
         var testDurations = new[] { 0.5f, 1.0f, 2.0f, 3.0f, 5.0f };
@@ -160,7 +210,7 @@ public class AsrServiceTests
             return;
         }
 
-        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
+        var service = CreateAsrService();
         await service.LoadModelAsync();
         var audioSamples = GenerateTestAudio(duration: 1.0f);
 
@@ -183,7 +233,7 @@ public class AsrServiceTests
             return;
         }
 
-        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
+        var service = CreateAsrService();
         await service.LoadModelAsync();
 
         // Test edge cases: very short, exact multiples of hop length, etc.
@@ -224,7 +274,7 @@ public class AsrServiceTests
             return;
         }
 
-        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
+        var service = CreateAsrService();
         await service.LoadModelAsync();
         var audioSamples = GenerateTestAudio(duration: 2.0f);
 
@@ -260,44 +310,6 @@ public class AsrServiceTests
 
         // Assert
         extractor.NumMels.Should().Be(80);
-    }
-
-    #endregion
-
-    #region Helper Methods
-
-    /// <summary>
-    /// Generate test audio samples (mono, 16kHz).
-    /// </summary>
-    private float[] GenerateTestAudio(float duration)
-    {
-        const int sampleRate = 16000;
-        int sampleCount = (int)(duration * sampleRate);
-        return GenerateTestAudio(sampleCount);
-    }
-
-    /// <summary>
-    /// Generate test audio with specific sample count.
-    /// Creates a simple sine wave with some noise.
-    /// </summary>
-    private float[] GenerateTestAudio(int sampleCount)
-    {
-        var samples = new float[sampleCount];
-        var random = new Random(42); // Fixed seed for reproducibility
-
-        for (int i = 0; i < sampleCount; i++)
-        {
-            // Mix of sine waves at different frequencies (simulate speech formants)
-            float t = i / 16000.0f;
-            float signal = 0.3f * MathF.Sin(2 * MathF.PI * 200 * t)   // F1
-                         + 0.2f * MathF.Sin(2 * MathF.PI * 800 * t)   // F2
-                         + 0.1f * MathF.Sin(2 * MathF.PI * 2400 * t)  // F3
-                         + 0.05f * (float)(random.NextDouble() - 0.5); // Noise
-
-            samples[i] = Math.Clamp(signal, -1.0f, 1.0f);
-        }
-
-        return samples;
     }
 
     #endregion

@@ -1,44 +1,37 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.ML.OnnxRuntime;
-using Microsoft.ML.OnnxRuntime.Tensors;
+using NvidiaVoiceAgent.Core.Adapters;
 using NvidiaVoiceAgent.Core.Models;
 using NvidiaVoiceAgent.ModelHub;
 
 namespace NvidiaVoiceAgent.Core.Services;
 
 /// <summary>
-/// ASR service using ONNX Runtime for Parakeet-TDT-0.6B-V2 or compatible models.
-/// Implements lazy loading and GPU/CPU fallback.
+/// ASR service using model adapter pattern for flexible model support.
+/// Delegates actual inference to IAsrModelAdapter implementations.
+/// Implements lazy loading and graceful mock mode fallback.
 /// </summary>
 public class AsrService : IAsrService, IDisposable
 {
     private readonly ILogger<AsrService> _logger;
     private readonly ModelConfig _config;
-    private MelSpectrogramExtractor _melExtractor;
+    private readonly IAsrModelAdapter _adapter;
     private readonly IModelDownloadService? _modelDownloadService;
     private readonly SemaphoreSlim _loadLock = new(1, 1);
 
-    private InferenceSession? _session;
-    private string[]? _vocabulary;
     private bool _isModelLoaded;
     private bool _isMockMode;
     private bool _disposed;
-    private bool _cudaAvailable;
-
-    // Model input/output names (may vary by model export)
-    private const string InputName = "audio_signal";
-    private const string InputLengthName = "length";
-    private const string OutputName = "logprobs";
 
     public AsrService(
         ILogger<AsrService> logger,
         IOptions<ModelConfig> config,
+        IAsrModelAdapter adapter,
         IModelDownloadService? modelDownloadService = null)
     {
         _logger = logger;
         _config = config.Value;
-        _melExtractor = new MelSpectrogramExtractor();
+        _adapter = adapter;
         _modelDownloadService = modelDownloadService;
     }
 
@@ -60,7 +53,7 @@ public class AsrService : IAsrService, IDisposable
 
         try
         {
-            return await Task.Run(() => RunInference(audioSamples), cancellationToken);
+            return await _adapter.TranscribeAsync(audioSamples, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -88,12 +81,7 @@ public class AsrService : IAsrService, IDisposable
 
         try
         {
-            var result = await Task.Run(() => RunInference(audioSamples), cancellationToken);
-
-            // For partial results, estimate confidence based on audio length and energy
-            float confidence = EstimateConfidence(audioSamples);
-
-            return (result, confidence);
+            return await _adapter.TranscribeWithConfidenceAsync(audioSamples, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -109,13 +97,13 @@ public class AsrService : IAsrService, IDisposable
         await _loadLock.WaitAsync(cancellationToken);
         try
         {
-            if (_isModelLoaded) return;
+            if (_isModelLoaded) return; // Double-check pattern
 
-            var modelPath = FindModelFile();
+            var modelPath = FindModelDirectory();
             if (modelPath == null)
             {
                 _logger.LogWarning(
-                    "No ASR ONNX model found in '{ModelPath}'. Running in mock mode. " +
+                    "No ASR model found in '{ModelPath}'. Running in mock mode. " +
                     "Download Parakeet-TDT ONNX from HuggingFace: onnx-community/parakeet-tdt-0.6b-v2-ONNX",
                     _config.AsrModelPath);
                 _isMockMode = true;
@@ -123,25 +111,25 @@ public class AsrService : IAsrService, IDisposable
                 return;
             }
 
-            // Convert to absolute path so ONNX Runtime can resolve external data files
-            modelPath = Path.GetFullPath(modelPath);
             _logger.LogInformation("Loading ASR model from {ModelPath}", modelPath);
 
-            // Try GPU first, fall back to CPU
-            var sessionOptions = CreateSessionOptions();
-            _session = new InferenceSession(modelPath, sessionOptions);
+            try
+            {
+                // Delegate model loading to the adapter
+                await _adapter.LoadAsync(modelPath, cancellationToken);
 
-            // Read expected mel bins from model input metadata and reconfigure extractor
-            ConfigureMelExtractorFromModel();
+                _isModelLoaded = true;
+                _isMockMode = false;
 
-            // Load vocabulary if available
-            LoadVocabulary(Path.GetDirectoryName(modelPath)!);
-
-            _isModelLoaded = true;
-            _isMockMode = false;
-
-            var provider = _cudaAvailable ? "CUDA (GPU)" : "CPU";
-            _logger.LogInformation("ASR model loaded successfully using {Provider}", provider);
+                _logger.LogInformation("ASR model loaded successfully via adapter: {ModelName}",
+                    _adapter.ModelName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to load ASR model via adapter. Falling back to mock mode.");
+                _isMockMode = true;
+                _isModelLoaded = true;
+            }
         }
         finally
         {
@@ -149,78 +137,27 @@ public class AsrService : IAsrService, IDisposable
         }
     }
 
-    private string? FindModelFile()
+    private string? FindModelDirectory()
     {
         var basePath = _config.AsrModelPath;
 
-        // For Parakeet-TDT model, prioritize encoder.onnx (decoder is incompatible with current pipeline)
-        string[] possibleNames =
-        {
-            "encoder.onnx",      // Parakeet encoder (preferred)
-            "model.onnx",         // Generic model file
-            "parakeet.onnx",      // Alternative Parakeet name
-            "asr.onnx"            // Generic ASR name
-        };
-
-        // Check if basePath is directly an ONNX file
-        if (File.Exists(basePath) && basePath.EndsWith(".onnx", StringComparison.OrdinalIgnoreCase))
-        {
-            // Avoid loading decoder.onnx directly (incompatible with current pipeline)
-            if (basePath.EndsWith("decoder.onnx", StringComparison.OrdinalIgnoreCase))
-            {
-                _logger.LogWarning("Cannot load decoder.onnx directly - it requires a dual-model inference pipeline. Use encoder.onnx instead.");
-                return null;
-            }
-            return basePath;
-        }
-
-        // Check if basePath is a directory
+        // Check if basePath directly contains model_spec.json
         if (Directory.Exists(basePath))
         {
-            // First priority: encoder.onnx in onnx subdirectory (Parakeet layout)
-            var encoderPath = Path.Combine(basePath, "onnx", "encoder.onnx");
-            if (File.Exists(encoderPath))
+            var specPath = Path.Combine(basePath, "model_spec.json");
+            if (File.Exists(specPath))
             {
-                _logger.LogDebug("Found encoder.onnx in onnx/ subdirectory");
-                return encoderPath;
+                _logger.LogDebug("Found model specification at {Path}", specPath);
+                return basePath;
             }
 
-            // Second priority: search for encoder.onnx in any subdirectory
-            var encoderSearch = Directory.GetFiles(basePath, "encoder.onnx", SearchOption.AllDirectories);
-            if (encoderSearch.Length > 0)
+            // Search subdirectories for model_spec.json
+            var specFiles = Directory.GetFiles(basePath, "model_spec.json", SearchOption.AllDirectories);
+            if (specFiles.Length > 0)
             {
-                _logger.LogDebug("Found encoder.onnx in subdirectory: {Path}", encoderSearch[0]);
-                return encoderSearch[0];
-            }
-
-            // Other model files
-            foreach (var name in possibleNames.Skip(1))
-            {
-                var fullPath = Path.Combine(basePath, name);
-                if (File.Exists(fullPath))
-                {
-                    return fullPath;
-                }
-            }
-
-            // Try to find any .onnx file (skip decoder.onnx)
-            var onnxFiles = Directory.GetFiles(basePath, "*.onnx", SearchOption.AllDirectories)
-                .Where(f => !f.EndsWith("decoder.onnx", StringComparison.OrdinalIgnoreCase))
-                .ToArray();
-            if (onnxFiles.Length > 0)
-            {
-                _logger.LogDebug("Found ONNX file: {Path}", onnxFiles[0]);
-                return onnxFiles[0];
-            }
-        }
-
-        // Try relative to current directory
-        foreach (var name in possibleNames)
-        {
-            var fullPath = Path.Combine(basePath, name);
-            if (File.Exists(fullPath))
-            {
-                return fullPath;
+                var modelDir = Path.GetDirectoryName(specFiles[0])!;
+                _logger.LogDebug("Found model specification in subdirectory: {Path}", modelDir);
+                return modelDir;
             }
         }
 
@@ -230,383 +167,25 @@ public class AsrService : IAsrService, IDisposable
             var hubPath = _modelDownloadService.GetModelPath(ModelType.Asr);
             if (hubPath != null && Directory.Exists(hubPath))
             {
-                // Priority 1: encoder.onnx in onnx/ subdirectory
-                var encoderPath = Path.Combine(hubPath, "onnx", "encoder.onnx");
-                if (File.Exists(encoderPath))
+                var specPath = Path.Combine(hubPath, "model_spec.json");
+                if (File.Exists(specPath))
                 {
-                    _logger.LogInformation("Found ASR model via ModelHub at {Path}", encoderPath);
-                    return encoderPath;
+                    _logger.LogInformation("Found ASR model via ModelHub at {Path}", hubPath);
+                    return hubPath;
                 }
 
-                // Priority 2: encoder.onnx anywhere in the directory
-                var encoderSearch = Directory.GetFiles(hubPath, "encoder.onnx", SearchOption.AllDirectories);
-                if (encoderSearch.Length > 0)
+                // Search subdirectories  
+                var specFiles = Directory.GetFiles(hubPath, "model_spec.json", SearchOption.AllDirectories);
+                if (specFiles.Length > 0)
                 {
-                    _logger.LogInformation("Found ASR model via ModelHub at {Path}", encoderSearch[0]);
-                    return encoderSearch[0];
-                }
-
-                // Priority 3: Other model files (excluding decoder.onnx)
-                foreach (var name in possibleNames.Skip(1))
-                {
-                    var fullPath = Path.Combine(hubPath, name);
-                    if (File.Exists(fullPath))
-                    {
-                        _logger.LogInformation("Found ASR model via ModelHub at {Path}", fullPath);
-                        return fullPath;
-                    }
-                }
-
-                // Priority 4: Any .onnx file except decoder.onnx
-                var onnxFiles = Directory.GetFiles(hubPath, "*.onnx", SearchOption.AllDirectories)
-                    .Where(f => !f.EndsWith("decoder.onnx", StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
-                if (onnxFiles.Length > 0)
-                {
-                    _logger.LogInformation("Found ASR model via ModelHub at {Path}", onnxFiles[0]);
-                    return onnxFiles[0];
+                    var modelDir = Path.GetDirectoryName(specFiles[0])!;
+                    _logger.LogInformation("Found ASR model via ModelHub at {Path}", modelDir);
+                    return modelDir;
                 }
             }
         }
 
         return null;
-    }
-
-    private Microsoft.ML.OnnxRuntime.SessionOptions CreateSessionOptions()
-    {
-        var options = new Microsoft.ML.OnnxRuntime.SessionOptions();
-        _cudaAvailable = false;
-
-        if (_config.UseGpu)
-        {
-            try
-            {
-                // Try CUDA provider first
-                options.AppendExecutionProvider_CUDA(0);
-                _cudaAvailable = true;
-                _logger.LogInformation("CUDA execution provider configured");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "CUDA not available, falling back to CPU");
-            }
-        }
-
-        // CPU is always the fallback
-        options.AppendExecutionProvider_CPU(0);
-
-        // Optimize for inference
-        options.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
-        options.EnableMemoryPattern = true;
-        // Set logging level to warning to reduce noise (change to VERBOSE for debugging)
-        options.LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_WARNING;
-
-        return options;
-    }
-
-    /// <summary>
-    /// Read expected mel bin count from the ONNX model's input metadata and
-    /// reconfigure the mel-spectrogram extractor if it differs from the current setting.
-    /// </summary>
-    private void ConfigureMelExtractorFromModel()
-    {
-        if (_session == null) return;
-
-        // Log all input metadata for debugging
-        _logger.LogInformation("=== ONNX Model Input Metadata ===");
-        foreach (var input in _session.InputMetadata)
-        {
-            var dims = input.Value.Dimensions.ToArray();
-            _logger.LogInformation("  {Name}: type={Type}, shape=[{Dims}]",
-                input.Key, input.Value.ElementType.Name, string.Join(", ", dims));
-        }
-
-        foreach (var input in _session.InputMetadata)
-        {
-            if (input.Value.ElementType != typeof(float)) continue;
-
-            // Typical shape: [batch, mel_bins, time] or [batch, time, mel_bins]
-            var dims = input.Value.Dimensions.ToArray();
-
-            if (dims.Length >= 2)
-            {
-                // mel_bins dimension is usually the second one (index 1) for shape [1, mel, T]
-                // But could be index 2 for [1, T, mel]
-                // Check which dimension matches current extractor
-
-                int index1 = dims[1];
-                int index2 = dims.Length > 2 ? dims[2] : -1;
-
-                // Heuristic: Mels is usually 80 or 128 (or similar fixed). Time is usually -1 or very large.
-                int expectedMels = index1;
-                if ((index1 == -1 || index1 < 40) && index2 >= 40)
-                {
-                    expectedMels = index2;
-                }
-
-                if (expectedMels >= 40 && expectedMels <= 256 && expectedMels != _melExtractor.NumMels)
-                {
-                    _logger.LogInformation(
-                        "Model expects {Expected} mel bins, reconfiguring extractor (was {Current})",
-                        expectedMels, _melExtractor.NumMels);
-                    _melExtractor = new MelSpectrogramExtractor(nMels: expectedMels);
-                }
-                else if (expectedMels == _melExtractor.NumMels)
-                {
-                    _logger.LogDebug("Model mel bins ({MelBins}) match extractor configuration", expectedMels);
-                }
-                break;
-            }
-        }
-    }
-
-    private void LoadVocabulary(string modelDirectory)
-    {
-        // Common vocabulary file names
-        string[] vocabNames = { "vocab.txt", "vocabulary.txt", "tokens.txt" };
-
-        foreach (var name in vocabNames)
-        {
-            var vocabPath = Path.Combine(modelDirectory, name);
-            if (File.Exists(vocabPath))
-            {
-                _vocabulary = File.ReadAllLines(vocabPath);
-                _logger.LogInformation("Loaded vocabulary with {Count} tokens", _vocabulary.Length);
-                return;
-            }
-        }
-
-        _logger.LogWarning("No vocabulary file found. Token decoding may not work correctly.");
-    }
-
-    private string RunInference(float[] audioSamples)
-    {
-        if (_session == null)
-        {
-            throw new InvalidOperationException("Model session not initialized");
-        }
-
-        // Extract mel spectrogram
-        var melSpec = _melExtractor.Extract(audioSamples);
-        melSpec = _melExtractor.Normalize(melSpec);
-
-        int numFrames = melSpec.GetLength(0);
-        int numMels = melSpec.GetLength(1);
-
-        _logger.LogDebug("Original MelSpec frames: {NumFrames}, Mels: {NumMels}", numFrames, numMels);
-
-        if (numFrames == 0)
-        {
-            return string.Empty;
-        }
-
-        // Create input tensor [batch=1, mel_bins, time]
-        var inputData = new float[1 * numMels * numFrames];
-        for (int t = 0; t < numFrames; t++)
-        {
-            for (int m = 0; m < numMels; m++)
-            {
-                inputData[m * numFrames + t] = melSpec[t, m];
-            }
-        }
-
-        var inputTensor = new DenseTensor<float>(inputData, new[] { 1, numMels, numFrames });
-
-        // The 'length' parameter represents the valid number of mel-spectrogram frames.
-        // NOT the raw audio sample count!
-        long audioLength = numFrames;
-
-        _logger.LogInformation(
-            "ASR input: audio_signal=[1, {NumMels}, {NumFrames}], length=[{Length}]",
-            numMels, numFrames, audioLength);
-
-        var lengthTensor = new DenseTensor<long>(new long[] { audioLength }, new[] { 1 });
-
-        // Prepare inputs with audio sample length (not mel frame count)
-        var inputs = CreateModelInputs(inputTensor, lengthTensor, audioLength);
-
-        // Run inference
-        using var results = _session.Run(inputs);
-
-        // Decode output
-        return DecodeOutput(results);
-    }
-
-    private IReadOnlyCollection<NamedOnnxValue> CreateModelInputs(
-        DenseTensor<float> inputTensor,
-        DenseTensor<long> lengthTensor,
-        long audioSampleLength)
-    {
-        var inputs = new List<NamedOnnxValue>();
-
-        // Get actual input names from the model
-        var inputNames = _session!.InputMetadata.Keys.ToList();
-
-        foreach (var name in inputNames)
-        {
-            var meta = _session.InputMetadata[name];
-
-            if (meta.ElementType == typeof(float))
-            {
-                inputs.Add(NamedOnnxValue.CreateFromTensor(name, inputTensor));
-                _logger.LogDebug("Added float input '{Name}' with shape [{Shape}]",
-                    name, string.Join(", ", inputTensor.Dimensions.ToArray()));
-            }
-            else if (meta.ElementType == typeof(long))
-            {
-                // Use original audio length for length parameter
-                var lengthValue = new DenseTensor<long>(new long[] { audioSampleLength }, new[] { 1 });
-                inputs.Add(NamedOnnxValue.CreateFromTensor(name, lengthValue));
-                _logger.LogDebug("Added long input '{Name}' with value [{Value}]", name, audioSampleLength);
-            }
-            else if (meta.ElementType == typeof(int))
-            {
-                // Some models use int32 for length
-                var lengthValue = new DenseTensor<int>(new int[] { (int)audioSampleLength }, new[] { 1 });
-                inputs.Add(NamedOnnxValue.CreateFromTensor(name, lengthValue));
-                _logger.LogDebug("Added int input '{Name}' with value [{Value}]", name, (int)audioSampleLength);
-            }
-        }
-
-        return inputs;
-    }
-
-    private string DecodeOutput(IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results)
-    {
-        // Get the output tensor
-        var output = results.First();
-
-        if (output.Value is not Tensor<float> outputTensor)
-        {
-            // Try other output types
-            if (output.Value is Tensor<long> tokenIds)
-            {
-                return DecodeTokenIds(tokenIds.ToArray());
-            }
-            if (output.Value is Tensor<int> intTokenIds)
-            {
-                return DecodeTokenIds(intTokenIds.ToArray().Select(x => (long)x).ToArray());
-            }
-
-            _logger.LogWarning("Unexpected output type: {Type}", output.Value?.GetType().Name ?? "null");
-            return "[Unknown output format]";
-        }
-
-        // CTC decoding - greedy decode from logprobs
-        return GreedyCtcDecode(outputTensor);
-    }
-
-    private string GreedyCtcDecode(Tensor<float> logprobs)
-    {
-        var dims = logprobs.Dimensions.ToArray();
-
-        // Typical shape: [batch, time, vocab] or [time, vocab]
-        int timeSteps, vocabSize;
-
-        if (dims.Length == 3)
-        {
-            timeSteps = dims[1];
-            vocabSize = dims[2];
-        }
-        else if (dims.Length == 2)
-        {
-            timeSteps = dims[0];
-            vocabSize = dims[1];
-        }
-        else
-        {
-            _logger.LogWarning("Unexpected logprobs shape: [{Dims}]", string.Join(", ", dims));
-            return "[Decode error]";
-        }
-
-        var tokens = new List<int>();
-        int prevToken = -1;
-        int blankToken = 0; // CTC blank is typically token 0
-
-        for (int t = 0; t < timeSteps; t++)
-        {
-            // Find argmax for this timestep
-            float maxVal = float.MinValue;
-            int maxIdx = 0;
-
-            for (int v = 0; v < vocabSize; v++)
-            {
-                float val = dims.Length == 3
-                    ? logprobs[0, t, v]
-                    : logprobs[t, v];
-
-                if (val > maxVal)
-                {
-                    maxVal = val;
-                    maxIdx = v;
-                }
-            }
-
-            // CTC: skip blanks and repeated tokens
-            if (maxIdx != blankToken && maxIdx != prevToken)
-            {
-                tokens.Add(maxIdx);
-            }
-            prevToken = maxIdx;
-        }
-
-        return DecodeTokenIds(tokens.Select(t => (long)t).ToArray());
-    }
-
-    private string DecodeTokenIds(long[] tokenIds)
-    {
-        if (_vocabulary == null || _vocabulary.Length == 0)
-        {
-            // Fallback: assume character-level tokens
-            return new string(tokenIds
-                .Where(t => t > 0 && t < 256)
-                .Select(t => (char)t)
-                .ToArray());
-        }
-
-        var tokens = tokenIds
-            .Where(t => t >= 0 && t < _vocabulary.Length)
-            .Select(t => _vocabulary[t])
-            .Where(t => !string.IsNullOrEmpty(t) && t != "<blank>" && t != "<pad>" && t != "<unk>");
-
-        // Join tokens - handle BPE-style tokens with special characters
-        var text = string.Join("", tokens)
-            .Replace("▁", " ")  // Sentencepiece word boundary
-            .Replace("##", "")  // WordPiece continuation
-            .Trim();
-
-        return text;
-    }
-
-    /// <summary>
-    /// Estimate confidence level based on audio characteristics.
-    /// Used for partial/streaming ASR results.
-    /// </summary>
-    private float EstimateConfidence(float[] audioSamples)
-    {
-        if (audioSamples == null || audioSamples.Length < 1600) // Less than 0.1s
-            return 0.3f;
-
-        // Calculate RMS energy as an indicator of clear speech
-        float sumSquares = 0;
-        for (int i = 0; i < audioSamples.Length; i++)
-        {
-            sumSquares += audioSamples[i] * audioSamples[i];
-        }
-        float rmsEnergy = (float)Math.Sqrt(sumSquares / audioSamples.Length);
-
-        // Map RMS energy to confidence (0.0-1.0)
-        // Typical speech: 0.01-0.5
-        float confidence = Math.Min(1.0f, rmsEnergy / 0.1f);
-
-        // Adjust based on duration
-        var duration = audioSamples.Length / 16000.0;
-        if (duration < 0.5)
-            confidence *= 0.7f; // Lower confidence for very short clips
-        else if (duration > 5.0)
-            confidence *= 0.95f; // Increase confidence for longer, complete utterances
-
-        return Math.Max(0.1f, Math.Min(1.0f, confidence));
     }
 
     private string GenerateMockTranscript(float[] audioSamples)
@@ -642,7 +221,11 @@ public class AsrService : IAsrService, IDisposable
     {
         if (_disposed) return;
 
-        _session?.Dispose();
+        if (_adapter is IDisposable disposableAdapter)
+        {
+            disposableAdapter.Dispose();
+        }
+
         _loadLock.Dispose();
         _disposed = true;
 

@@ -72,4 +72,12 @@ public class TestConfiguration
 
         return Path.GetFullPath(Path.Combine(solutionRoot, relativePath));
     }
+
+    /// <summary>
+    /// Create a logger for a specific type.
+    /// </summary>
+    public ILogger<T> CreateLogger<T>()
+    {
+        return NullLogger<T>.Instance;
+    }
 }

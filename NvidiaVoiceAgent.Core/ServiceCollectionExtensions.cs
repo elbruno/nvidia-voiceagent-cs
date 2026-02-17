@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using NvidiaVoiceAgent.Core.Adapters;
 using NvidiaVoiceAgent.Core.Models;
 using NvidiaVoiceAgent.Core.Services;
 
@@ -24,9 +25,13 @@ public static class ServiceCollectionExtensions
             services.Configure(configureOptions);
         }
 
+        // Register model adapters
+        services.AddSingleton<IAsrModelAdapter, ParakeetTdtAdapter>();
+
+        // Register services (now using adapters)
         services.AddSingleton<IAsrService, AsrService>();
         services.AddSingleton<IAudioProcessor, AudioProcessor>();
-        
+
         // Register PersonaPlex as both IPersonaPlexService and ILlmService
         // This allows it to be used as a general LLM or as a specialized speech-to-speech service
         services.AddSingleton<PersonaPlexService>();
