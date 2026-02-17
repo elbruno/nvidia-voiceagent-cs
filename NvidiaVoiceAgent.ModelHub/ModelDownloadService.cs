@@ -209,16 +209,26 @@ public class ModelDownloadService : IModelDownloadService
         var mainFilePath = Path.Combine(localDir, model.Filename);
         if (File.Exists(mainFilePath))
         {
-            return mainFilePath;
+            // Return the directory path, not the file path
+            // This allows services to locate related files
+            return localDir;
         }
 
-        // Search for any .onnx file in the local directory
+        // Search for common model file extensions in the local directory
         if (Directory.Exists(localDir))
         {
+            // Search for ONNX models
             var onnxFiles = Directory.GetFiles(localDir, "*.onnx", SearchOption.AllDirectories);
             if (onnxFiles.Length > 0)
             {
-                return onnxFiles[0];
+                return Path.GetDirectoryName(onnxFiles[0]);
+            }
+
+            // Search for SafeTensors models (used by PersonaPlex)
+            var safetensorsFiles = Directory.GetFiles(localDir, "*.safetensors", SearchOption.AllDirectories);
+            if (safetensorsFiles.Length > 0)
+            {
+                return Path.GetDirectoryName(safetensorsFiles[0]);
             }
         }
 

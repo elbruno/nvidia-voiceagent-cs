@@ -26,6 +26,12 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IAsrService, AsrService>();
         services.AddSingleton<IAudioProcessor, AudioProcessor>();
+        
+        // Register PersonaPlex as both IPersonaPlexService and ILlmService
+        // This allows it to be used as a general LLM or as a specialized speech-to-speech service
+        services.AddSingleton<PersonaPlexService>();
+        services.AddSingleton<IPersonaPlexService>(sp => sp.GetRequiredService<PersonaPlexService>());
+        services.AddSingleton<ILlmService>(sp => sp.GetRequiredService<PersonaPlexService>());
 
         return services;
     }

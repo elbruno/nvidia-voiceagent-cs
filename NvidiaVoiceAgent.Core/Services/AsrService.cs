@@ -171,8 +171,27 @@ public class AsrService : IAsrService, IDisposable
             var hubPath = _modelDownloadService.GetModelPath(ModelType.Asr);
             if (hubPath != null)
             {
-                _logger.LogInformation("Found ASR model via ModelHub at {Path}", hubPath);
-                return hubPath;
+                // GetModelPath returns a directory, so find the actual .onnx file
+                if (Directory.Exists(hubPath))
+                {
+                    foreach (var name in possibleNames)
+                    {
+                        var fullPath = Path.Combine(hubPath, name);
+                        if (File.Exists(fullPath))
+                        {
+                            _logger.LogInformation("Found ASR model via ModelHub at {Path}", fullPath);
+                            return fullPath;
+                        }
+                    }
+
+                    // Try to find any .onnx file in the directory
+                    var onnxFiles = Directory.GetFiles(hubPath, "*.onnx", SearchOption.AllDirectories);
+                    if (onnxFiles.Length > 0)
+                    {
+                        _logger.LogInformation("Found ASR model via ModelHub at {Path}", onnxFiles[0]);
+                        return onnxFiles[0];
+                    }
+                }
             }
         }
 

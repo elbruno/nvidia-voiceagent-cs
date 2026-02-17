@@ -62,6 +62,22 @@ public class ModelRegistry : IModelRegistry
                 IsRequired = false,
                 AdditionalFiles = [],
                 IsAvailableForDownload = false
+            },
+            new ModelInfo
+            {
+                Type = ModelType.PersonaPlex,
+                Name = "PersonaPlex-7B-v1",
+                RepoId = "nvidia/personaplex-7b-v1",
+                Filename = "model.safetensors",
+                ExpectedSizeBytes = 17_900_000_000L, // ~16.7 GB for model.safetensors
+                LocalDirectory = "personaplex-7b",
+                IsRequired = false,
+                AdditionalFiles = [
+                    "tokenizer-e351c8d8-checkpoint125.safetensors",  // ~385 MB
+                    "tokenizer_spm_32k_3.model",                     // ~553 KB
+                    "voices.tgz"                                     // ~6.1 MB
+                ],
+                IsAvailableForDownload = true
             }
         };
     }

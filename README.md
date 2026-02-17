@@ -1,23 +1,25 @@
 # NVIDIA Voice Agent (C#)
 
-A real-time voice agent built with **ASP.NET Core 10** that performs Speech-to-Text (ASR), LLM processing, and Text-to-Speech (TTS) using NVIDIA NIM models via ONNX Runtime.
+A real-time voice agent built with **ASP.NET Core 10** that performs Speech-to-Text (ASR), LLM processing, and Text-to-Speech (TTS) using NVIDIA NIM models via ONNX Runtime and TorchSharp.
 
 **Ported from:** [nvidia-transcribe/scenario5](https://github.com/elbruno/nvidia-transcribe/tree/main/scenario5)
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
-[![Tests](https://img.shields.io/badge/tests-69%20passed-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
+[![Tests](https://img.shields.io/badge/tests-98%20passed-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
 
 ## Features
 
 - **Real-time Speech Recognition** — NVIDIA Parakeet-TDT-0.6B-V2 via ONNX Runtime
-- **LLM Integration** — Phi-3-mini-4k / TinyLlama with 4-bit quantization
+- **PersonaPlex LLM** — NVIDIA PersonaPlex-7B-v1 full-duplex speech-to-speech AI (NEW ✨)
+- **Alternative LLMs** — Phi-3-mini-4k / TinyLlama with 4-bit quantization
 - **Text-to-Speech** — FastPitch + HiFiGAN voice synthesis
 - **WebSocket Streaming** — Bi-directional audio via `/ws/voice` and `/ws/logs`
 - **Browser UI** — Models panel with download status, progress bars, and disk paths
-- **Auto Model Download** — Fetches ONNX models from HuggingFace on first run
+- **Auto Model Download** — Fetches models from HuggingFace on first run
 - **Mock Mode** — Full development workflow without downloading models
 - **GPU Acceleration** — CUDA with automatic CPU fallback
+- **Voice Personas** — 18 pre-packaged voices with PersonaPlex
 
 ## Prerequisites
 
@@ -47,7 +49,43 @@ Open **<http://localhost:5003>** in your browser. The app auto-downloads the ASR
 dotnet test
 ```
 
-69 tests across 3 test projects (Web, Core, ModelHub) — all passing.
+98 tests across 3 test projects (Web, Core, ModelHub) — all passing.
+
+## Supported Models
+
+| Model | Type | Size | Status | Notes |
+|-------|------|------|--------|-------|
+| **Parakeet-TDT-0.6B-V2** | ASR | ~2.5 GB | ✅ Auto-download | ONNX format, GPU/CPU |
+| **PersonaPlex-7B-v1** | LLM | ~16.7 GB | ✅ Available | Full-duplex speech AI, 18 voices, requires HF token |
+| **TinyLlama-1.1B** | LLM | ~2.0 GB | 🔜 Coming soon | Fallback LLM option |
+| **FastPitch** | TTS | ~80 MB | 🔜 Coming soon | Mel-spectrogram generator |
+| **HiFiGAN** | Vocoder | ~55 MB | 🔜 Coming soon | Neural vocoder |
+
+### PersonaPlex Model
+
+PersonaPlex-7B-v1 is NVIDIA's state-of-the-art full-duplex speech-to-speech conversational AI:
+
+- **7 billion parameters** based on Moshi architecture
+- **Ultra-low latency**: ~170ms time-to-first-token
+- **Voice control**: 18 pre-packaged voice personas + custom voice cloning
+- **Persona prompting**: Text prompts define conversation role/style
+- **Gated access**: Requires accepting NVIDIA's license on HuggingFace
+
+To use PersonaPlex:
+
+1. Accept the license at <https://huggingface.co/nvidia/personaplex-7b-v1>
+2. Generate a HuggingFace token with read access
+3. Add token to `appsettings.json`:
+   ```json
+   {
+     "ModelHub": {
+       "HuggingFaceToken": "hf_your_token_here"
+     }
+   }
+   ```
+4. Download via the UI or API: `POST /api/models/PersonaPlex-7B-v1/download`
+
+**Note**: PersonaPlex currently runs in mock mode. TorchSharp integration for actual inference is planned.
 
 ## Configuration
 
@@ -56,13 +94,15 @@ Edit `NvidiaVoiceAgent/appsettings.json`:
 ```jsonc
 {
   "ModelHub": {
-    "AutoDownload": true,          // Download models on startup
-    "UseInt8Quantization": true,   // Prefer quantized models
-    "ModelCachePath": "model-cache" // Local cache directory
+    "AutoDownload": true,           // Download models on startup
+    "UseInt8Quantization": true,    // Prefer quantized models
+    "ModelCachePath": "model-cache", // Local cache directory
+    "HuggingFaceToken": null        // Required for gated models (PersonaPlex)
   },
   "ModelConfig": {
-    "UseGpu": true,                // CUDA acceleration
-    "Use4BitQuantization": true    // LLM quantization
+    "UseGpu": true,                 // CUDA acceleration
+    "Use4BitQuantization": true,    // LLM quantization
+    "PersonaPlexVoice": "voice_0"   // Default PersonaPlex voice (0-17)
   }
 }
 ```
@@ -84,6 +124,7 @@ nvidia-voiceagent-cs/
 |----------|-------------|
 | [Architecture](docs/architecture/overview.md) | Solution structure, project layers, dependency graph |
 | [Implementation Details](docs/guides/implementation-details.md) | Voice pipeline, audio processing, ONNX inference, model loading |
+| [PersonaPlex Integration Plan](docs/plans/plan_260217_0020.md) | Detailed plan for PersonaPlex-7B-v1 implementation |
 | [API Reference](docs/api/endpoints.md) | HTTP and WebSocket endpoints with message formats |
 | [Developer Guide](docs/guides/developer-guide.md) | Coding conventions, adding services, testing patterns |
 | [Troubleshooting](docs/guides/troubleshooting.md) | Common issues and solutions |
@@ -103,5 +144,11 @@ MIT License — see [LICENSE](LICENSE) for details.
 ## Credits
 
 - **Original**: [nvidia-transcribe](https://github.com/elbruno/nvidia-transcribe) (Python)
-- **Models**: NVIDIA Parakeet, FastPitch, HiFiGAN
-- **Runtime**: [ONNX Runtime](https://onnxruntime.ai/), [ASP.NET Core](https://learn.microsoft.com/en-us/aspnet/core/)
+- **Models**: NVIDIA Parakeet, PersonaPlex, FastPitch, HiFiGAN
+- **Runtime**: [ONNX Runtime](https://onnxruntime.ai/), [TorchSharp](https://github.com/dotnet/TorchSharp), [ASP.NET Core](https://learn.microsoft.com/en-us/aspnet/core/)
+
+## Related Links
+
+- [PersonaPlex Research Page](https://research.nvidia.com/labs/adlr/personaplex/)
+- [PersonaPlex on HuggingFace](https://huggingface.co/nvidia/personaplex-7b-v1)
+- [PersonaPlex GitHub](https://github.com/NVIDIA/personaplex)
