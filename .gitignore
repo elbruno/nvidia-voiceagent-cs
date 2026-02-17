@@ -5,6 +5,9 @@
 [Ll]og/
 [Ll]ogs/
 
+# Debug mode audio recordings
+logs/audio-debug/
+
 # .NET Core
 project.lock.json
 project.fragment.lock.json

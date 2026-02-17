@@ -11,5 +11,13 @@
     "UseInt8Quantization": true,
     "ModelCachePath": "model-cache",
     "HuggingFaceToken": "hf_your_actual_token_here"
+  },
+  "DebugMode": {
+    "Enabled": false,
+    "AudioLogPath": "logs/audio-debug",
+    "SaveIncomingAudio": true,
+    "SaveOutgoingAudio": true,
+    "SaveMetadata": true,
+    "MaxAgeInDays": 7
   }
 }
