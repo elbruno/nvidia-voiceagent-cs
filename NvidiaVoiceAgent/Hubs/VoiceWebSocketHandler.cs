@@ -33,6 +33,52 @@ public class VoiceWebSocketHandler
         PropertyNameCaseInsensitive = true
     };
 
+    private sealed class SessionLogWriter : IAsyncDisposable
+    {
+        private readonly StreamWriter _writer;
+        private readonly SemaphoreSlim _lock = new(1, 1);
+
+        private SessionLogWriter(StreamWriter writer, string filePath)
+        {
+            _writer = writer;
+            FilePath = filePath;
+        }
+
+        public string FilePath { get; }
+
+        public static SessionLogWriter Create(string directory, string fileName)
+        {
+            Directory.CreateDirectory(directory);
+            var filePath = Path.Combine(directory, fileName);
+            var stream = new FileStream(filePath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false))
+            {
+                AutoFlush = true
+            };
+            return new SessionLogWriter(writer, filePath);
+        }
+
+        public async Task WriteAsync(string level, string message)
+        {
+            var timestamp = DateTimeOffset.Now.ToString("O");
+            await _lock.WaitAsync(CancellationToken.None);
+            try
+            {
+                await _writer.WriteLineAsync($"{timestamp} [{level}] {message}");
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _writer.DisposeAsync();
+            _lock.Dispose();
+        }
+    }
+
     public VoiceWebSocketHandler(
         ILogger<VoiceWebSocketHandler> logger,
         AudioStreamBuffer audioStreamBuffer,
@@ -59,8 +105,28 @@ public class VoiceWebSocketHandler
     /// </summary>
     public async Task HandleAsync(WebSocket webSocket, CancellationToken cancellationToken)
     {
+        SessionLogWriter? sessionLog = null;
+        try
+        {
+            var sessionId = Guid.NewGuid().ToString("N");
+            var logDirectory = Path.Combine(Directory.GetCurrentDirectory(), "logs", "sessions");
+            var logFileName = $"voice-session_{DateTimeOffset.Now:yyyyMMdd_HHmmss}_{sessionId}.log";
+            sessionLog = SessionLogWriter.Create(logDirectory, logFileName);
+            _logger.LogInformation("Session log file: {Path}", sessionLog.FilePath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to create session log file");
+        }
+
         _logger.LogInformation("Voice WebSocket connection established");
-        await BroadcastLogAsync("Voice WebSocket connection established");
+        await BroadcastLogAsync("Voice WebSocket connection established", "info", sessionLog);
+
+        if (sessionLog != null)
+        {
+            await sessionLog.WriteAsync("info", $"Session log file: {sessionLog.FilePath}");
+            await BroadcastLogAsync($"Session log file: {sessionLog.FilePath}", "info", sessionLog);
+        }
 
         var sessionState = new VoiceSessionState();
         var buffer = new byte[256 * 1024]; // 256KB buffer for audio chunks
@@ -75,7 +141,7 @@ public class VoiceWebSocketHandler
                 var pendingAudio = _audioStreamBuffer.GetAndClear();
                 if (pendingAudio.Length > 0)
                 {
-                    await ProcessAudioChunkAsync(webSocket, pendingAudio, sessionState, cancellationToken);
+                    await ProcessAudioChunkAsync(webSocket, pendingAudio, sessionState, sessionLog, cancellationToken);
                 }
             };
             _audioStreamBuffer.OnPauseDetected += pauseHandler;
@@ -107,21 +173,29 @@ public class VoiceWebSocketHandler
 
                 if (result.MessageType == WebSocketMessageType.Text)
                 {
-                    await HandleTextMessageAsync(webSocket, messageData, sessionState, cancellationToken);
+                    await HandleTextMessageAsync(webSocket, messageData, sessionState, sessionLog, cancellationToken);
                 }
                 else if (result.MessageType == WebSocketMessageType.Binary)
                 {
-                    await HandleBinaryMessageAsync(webSocket, messageData, sessionState, cancellationToken);
+                    await HandleBinaryMessageAsync(webSocket, messageData, sessionState, sessionLog, cancellationToken);
                 }
             }
         }
         catch (WebSocketException ex)
         {
             _logger.LogWarning(ex, "WebSocket error during voice processing");
+            if (sessionLog != null)
+            {
+                await sessionLog.WriteAsync("warn", $"WebSocket error during voice processing: {ex.Message}");
+            }
         }
         catch (OperationCanceledException)
         {
             _logger.LogInformation("Voice WebSocket connection cancelled");
+            if (sessionLog != null)
+            {
+                await sessionLog.WriteAsync("info", "Voice WebSocket connection cancelled");
+            }
         }
         finally
         {
@@ -131,16 +205,23 @@ public class VoiceWebSocketHandler
                 _audioStreamBuffer.OnPauseDetected -= pauseHandler;
             }
             _audioStreamBuffer.Clear();
+
+            if (sessionLog != null)
+            {
+                await sessionLog.WriteAsync("info", "Voice WebSocket connection closed");
+                await sessionLog.DisposeAsync();
+            }
         }
 
         _logger.LogInformation("Voice WebSocket connection closed");
-        await BroadcastLogAsync("Voice WebSocket connection closed");
+        await BroadcastLogAsync("Voice WebSocket connection closed", "info", null);
     }
 
     private async Task HandleTextMessageAsync(
         WebSocket webSocket,
         byte[] messageData,
         VoiceSessionState sessionState,
+        SessionLogWriter? sessionLog,
         CancellationToken cancellationToken)
     {
         var json = Encoding.UTF8.GetString(messageData);
@@ -154,13 +235,13 @@ public class VoiceWebSocketHandler
             switch (message.Type?.ToLowerInvariant())
             {
                 case "config":
-                    await HandleConfigMessageAsync(message, sessionState);
+                    await HandleConfigMessageAsync(message, sessionState, sessionLog);
                     break;
 
                 case "clear_history":
                     sessionState.ChatHistory.Clear();
                     _logger.LogInformation("Chat history cleared");
-                    await BroadcastLogAsync("Chat history cleared");
+                    await BroadcastLogAsync("Chat history cleared", "info", sessionLog);
                     break;
 
                 default:
@@ -171,23 +252,27 @@ public class VoiceWebSocketHandler
         catch (JsonException ex)
         {
             _logger.LogWarning(ex, "Failed to parse JSON message");
+            if (sessionLog != null)
+            {
+                await sessionLog.WriteAsync("warn", $"Failed to parse JSON message: {ex.Message}");
+            }
         }
     }
 
-    private async Task HandleConfigMessageAsync(ConfigMessage message, VoiceSessionState sessionState)
+    private async Task HandleConfigMessageAsync(ConfigMessage message, VoiceSessionState sessionState, SessionLogWriter? sessionLog)
     {
         if (message.SmartMode.HasValue)
         {
             sessionState.SmartMode = message.SmartMode.Value;
             _logger.LogInformation("Smart mode set to: {SmartMode}", sessionState.SmartMode);
-            await BroadcastLogAsync($"Smart mode set to: {sessionState.SmartMode}");
+            await BroadcastLogAsync($"Smart mode set to: {sessionState.SmartMode}", "info", sessionLog);
         }
 
         if (!string.IsNullOrEmpty(message.SmartModel))
         {
             sessionState.SmartModel = message.SmartModel;
             _logger.LogInformation("Smart model set to: {SmartModel}", sessionState.SmartModel);
-            await BroadcastLogAsync($"Smart model set to: {sessionState.SmartModel}");
+            await BroadcastLogAsync($"Smart model set to: {sessionState.SmartModel}", "info", sessionLog);
         }
 
         // Support for realtime mode config (added in Phase 1)
@@ -200,14 +285,14 @@ public class VoiceWebSocketHandler
         {
             sessionState.RealtimeMode = true;
             _logger.LogInformation("Realtime conversation mode enabled");
-            await BroadcastLogAsync("✨ Realtime conversation mode enabled");
+            await BroadcastLogAsync("✨ Realtime conversation mode enabled", "info", sessionLog);
         }
 
         if (root.TryGetProperty("pauseThresholdMs", out var thresholdElem) && thresholdElem.TryGetInt32(out int threshold))
         {
             sessionState.PauseThresholdMs = threshold;
             _logger.LogInformation("Pause threshold set to: {Threshold}ms", threshold);
-            await BroadcastLogAsync($"Pause threshold: {threshold}ms");
+            await BroadcastLogAsync($"Pause threshold: {threshold}ms", "info", sessionLog);
         }
     }
 
@@ -215,10 +300,11 @@ public class VoiceWebSocketHandler
         WebSocket webSocket,
         byte[] audioData,
         VoiceSessionState sessionState,
+        SessionLogWriter? sessionLog,
         CancellationToken cancellationToken)
     {
         _logger.LogDebug("Received {Bytes} bytes of audio data", audioData.Length);
-        await BroadcastLogAsync($"Received {audioData.Length} bytes of audio data");
+        await BroadcastLogAsync($"Received {audioData.Length} bytes of audio data", "info", sessionLog);
 
         try
         {
@@ -238,13 +324,13 @@ public class VoiceWebSocketHandler
             else
             {
                 // Standard mode: Process immediately (existing behavior)
-                await ProcessAudioChunkAsync(webSocket, samples, sessionState, cancellationToken);
+                await ProcessAudioChunkAsync(webSocket, samples, sessionState, sessionLog, cancellationToken);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing audio");
-            await BroadcastLogAsync($"Error processing audio: {ex.Message}", "error");
+            await BroadcastLogAsync($"Error processing audio: {ex.Message}", "error", sessionLog);
         }
     }
 
@@ -255,6 +341,7 @@ public class VoiceWebSocketHandler
         WebSocket webSocket,
         float[] audioSamples,
         VoiceSessionState sessionState,
+        SessionLogWriter? sessionLog,
         CancellationToken cancellationToken)
     {
         try
@@ -262,7 +349,7 @@ public class VoiceWebSocketHandler
             // Step 2: Run ASR to get transcript (with confidence for streaming)
             var (transcript, confidence) = await RunAsrPartialAsync(audioSamples, cancellationToken);
             _logger.LogInformation("ASR transcript: {Transcript} (confidence: {Conf})", transcript, confidence);
-            await BroadcastLogAsync($"ASR transcript: {transcript}");
+            await BroadcastLogAsync($"ASR transcript: {transcript}", "info", sessionLog);
 
             // Send partial transcript with confidence
             if (sessionState.RealtimeMode)
@@ -286,12 +373,12 @@ public class VoiceWebSocketHandler
             {
                 // Send thinking indicator
                 await SendJsonAsync(webSocket, new ThinkingResponse(), cancellationToken);
-                await BroadcastLogAsync("LLM thinking...");
+                await BroadcastLogAsync("LLM thinking...", "info", sessionLog);
 
                 // Run LLM to generate response
                 responseText = await RunLlmAsync(transcript, sessionState, cancellationToken);
                 _logger.LogInformation("LLM response: {Response}", responseText);
-                await BroadcastLogAsync($"LLM response: {responseText}");
+                await BroadcastLogAsync($"LLM response: {responseText}", "info", sessionLog);
 
                 // Update chat history
                 sessionState.ChatHistory.Add(new ChatMessage { Role = "user", Content = transcript });
@@ -306,7 +393,7 @@ public class VoiceWebSocketHandler
             // Step 4: Run TTS to generate audio response
             byte[] responseAudio = await RunTtsAsync(responseText, cancellationToken);
             string audioBase64 = Convert.ToBase64String(responseAudio);
-            await BroadcastLogAsync($"Generated {responseAudio.Length} bytes of TTS audio");
+            await BroadcastLogAsync($"Generated {responseAudio.Length} bytes of TTS audio", "info", sessionLog);
 
             // Step 5: Send final response
             if (sessionState.RealtimeMode)
@@ -339,7 +426,7 @@ public class VoiceWebSocketHandler
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing audio chunk");
-            await BroadcastLogAsync($"Error processing audio: {ex.Message}", "error");
+            await BroadcastLogAsync($"Error processing audio: {ex.Message}", "error", sessionLog);
         }
     }
 
@@ -462,11 +549,16 @@ public class VoiceWebSocketHandler
         await webSocket.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, cancellationToken);
     }
 
-    private async Task BroadcastLogAsync(string message, string level = "info")
+    private async Task BroadcastLogAsync(string message, string level, SessionLogWriter? sessionLog)
     {
         if (_logBroadcaster != null)
         {
             await _logBroadcaster.BroadcastLogAsync(message, level);
+        }
+
+        if (sessionLog != null)
+        {
+            await sessionLog.WriteAsync(level, message);
         }
     }
 }
