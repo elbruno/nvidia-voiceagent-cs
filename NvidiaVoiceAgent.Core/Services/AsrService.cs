@@ -298,8 +298,8 @@ public class AsrService : IAsrService, IDisposable
         // Optimize for inference
         options.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
         options.EnableMemoryPattern = true;
-        // Enable verbose logging for debugging dimension issues
-        options.LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_VERBOSE;
+        // Set logging level to warning to reduce noise (change to VERBOSE for debugging)
+        options.LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_WARNING;
 
         return options;
     }
@@ -312,13 +312,21 @@ public class AsrService : IAsrService, IDisposable
     {
         if (_session == null) return;
 
+        // Log all input metadata for debugging
+        _logger.LogInformation("=== ONNX Model Input Metadata ===");
+        foreach (var input in _session.InputMetadata)
+        {
+            var dims = input.Value.Dimensions.ToArray();
+            _logger.LogInformation("  {Name}: type={Type}, shape=[{Dims}]", 
+                input.Key, input.Value.ElementType.Name, string.Join(", ", dims));
+        }
+
         foreach (var input in _session.InputMetadata)
         {
             if (input.Value.ElementType != typeof(float)) continue;
 
             // Typical shape: [batch, mel_bins, time] or [batch, time, mel_bins]
-            var dims = input.Value.Dimensions;
-            _logger.LogInformation("Model input {Name} shape: [{Dims}]", input.Key, string.Join(", ", dims));
+            var dims = input.Value.Dimensions.ToArray();
 
             if (dims.Length >= 2)
             {
@@ -402,87 +410,22 @@ public class AsrService : IAsrService, IDisposable
             }
         }
 
-        // Ensure number of frames is padded/trimmed to work with FastConformer subsampling?
-        // FastConformer uses 2 layers of Conv1d with kernel=3, stride=2 in its frontend.
-        // This effectively subsamples the input time dimension by 4x, but with valid padding.
-        // Standard formula ceil(l/4) or l/4 often mismatches the actual convolution output size for certain lengths,
-        // causing ONNX Runtime errors (e.g., "3 by 5" mismatch in Add inputs).
-        // 
-        // Solution: Calculate the exact output size of the convolution layers and pass THAT as the length.
-        // Conv1d output size = (input - kernel) / stride + 1
-
-        // 1st Conv: kernel=3, stride=2
-        int l_in = numFrames;
-        int l_out1 = (l_in - 3) / 2 + 1;
-
-        // 2nd Conv: kernel=3, stride=2
-        int l_out2 = (l_out1 - 3) / 2 + 1;
-
-        // Ensure input is large enough to produce at least 1 output frame
-        // If l_out2 <= 0, we need to pad. 
-        // To get l_out2=1, we need l_out1=3. To get l_out1=3, we need l_in=7.
-        if (l_out2 <= 0)
-        {
-            int minFrames = 7;
-            if (numFrames < minFrames)
-            {
-                int paddingNeeded = minFrames - numFrames;
-                Array.Resize(ref inputData, 1 * numMels * minFrames);
-                // Zero-pad the new area? Array.Resize does this automatically for prim types? No, it keeps 0.
-                // Actually we just resized the flattened array. The new elements are 0.
-                // But we need to update numFrames for the tensor shape.
-                numFrames = minFrames;
-
-                // Recalculate lengths
-                l_in = numFrames;
-                l_out1 = (l_in - 3) / 2 + 1;
-                l_out2 = (l_out1 - 3) / 2 + 1;
-            }
-        }
-
         var inputTensor = new DenseTensor<float>(inputData, new[] { 1, numMels, numFrames });
 
-        // The model expects 'length' input to represent the valid length after subsampling.
-        // However, some ONNX exports multiply this by 4 internally to generate a mask.
-        // If we found that passing l_out2 worked, we should check if we need to scale it.
-        // Based on testing, passing the EXACT calculated subsampled length `l_out2` failed with mismatches,
-        // but passing `l_out2 * 4` to trick the internal mask calculation worked.
-        // WAIT - In my thought process I said "Setting length to l_out2 * 4".
-        // Let's verify what I actually ran in the test. 
-        // The previous code block had: `long encoderLengthIdx = l_out2 * 4;`
-        // But the code I read back from `read_file` had:
-        // `long encoderLengthIdx = l_out2;`
-        // Wait, I missed the `* 4` in the read_file output? Or did I NOT include it?
-        //
-        // NOTE: The previous `read_file` output showed:
-        // `long encoderLengthIdx = l_out2 * 4;` was NOT present. It was:
-        // `long encoderLengthIdx = l_out2;`
-        //
-        // BUT the test PASSED.
-        // "Passed NvidiaVoiceAgent.Core.Tests.AsrServiceIntegrationTests.TranscribeAsync_WithRealModel_DoesNotCrash"
-        //
-        // So `l_out2` (unscaled) seems to be the correct value?
-        //
-        // Let's re-read the `read_file` output carefully.
-        // Lines:
-        // `long encoderLengthIdx = l_out2;`
-        // `_logger.LogDebug("Passing calculated valid length {Len} for input frames {Frames}", encoderLengthIdx, numFrames);`
-        //
-        // The log said: "Passing calculated valid length 5 for input frames 23".
-        // Calculation: 23 -> (23-3)/2 + 1 = 11 -> (11-3)/2 + 1 = 5.
-        // So passing 5 worked.
-        //
-        // If I had passed `5 * 4 = 20`, that would also be a valid strategy if the model expected original length.
-        // But 5 is the subsampled length.
-        //
-        // So the fix IS just passing `l_out2`.
+        // CRITICAL: The 'length' parameter must match the original audio samples count, NOT mel frames!
+        // Mel frames = ceil(audio_samples / hop_length)
+        // To reverse: audio_samples ≈ numFrames * hop_length
+        // Default hop_length = 160 samples
+        long audioLength = audioSamples.Length;
 
-        long encoderLengthIdx = l_out2;
+        _logger.LogInformation(
+            "ASR input: audio_signal=[1, {NumMels}, {NumFrames}], length=[{Length}] (from {AudioSamples} samples)",
+            numMels, numFrames, audioLength, audioSamples.Length);
 
-        var lengthTensor = new DenseTensor<long>(new long[] { encoderLengthIdx }, new[] { 1 });
+        var lengthTensor = new DenseTensor<long>(new long[] { audioLength }, new[] { 1 });
 
-        // Prepare inputs - try different input configurations based on model
-        var inputs = CreateModelInputs(inputTensor, lengthTensor, (int)encoderLengthIdx);
+        // Prepare inputs with audio sample length (not mel frame count)
+        var inputs = CreateModelInputs(inputTensor, lengthTensor, audioLength);
 
         // Run inference
         using var results = _session.Run(inputs);
@@ -494,18 +437,8 @@ public class AsrService : IAsrService, IDisposable
     private IReadOnlyCollection<NamedOnnxValue> CreateModelInputs(
         DenseTensor<float> inputTensor,
         DenseTensor<long> lengthTensor,
-        int numFrames)
+        long audioSampleLength)
     {
-        // Check for specific batch size requirement logic (some models are strict)
-        // If broadcasting failed on axis 1 (dimension 39 vs 77 in error log), check if we need to resize
-
-        // This specific fix addresses "onnxruntime::BroadcastIterator::Append axis == 1 || axis == largest was false"
-        // It's likely related to how PositionalEmbedding handles mismatched lengths in some ONNX exports.
-        // For Parakeet-TDT, ensure length is explicitly cast to specific integer types if needed.
-
-        // Also ensure mel bins matches exactly what model expects (80 vs 128)
-        // Re-check input metadata for explicit shape hints
-
         var inputs = new List<NamedOnnxValue>();
 
         // Get actual input names from the model
@@ -518,22 +451,22 @@ public class AsrService : IAsrService, IDisposable
             if (meta.ElementType == typeof(float))
             {
                 inputs.Add(NamedOnnxValue.CreateFromTensor(name, inputTensor));
+                _logger.LogDebug("Added float input '{Name}' with shape [{Shape}]", 
+                    name, string.Join(", ", inputTensor.Dimensions.ToArray()));
             }
-            else if (meta.ElementType == typeof(long) || meta.ElementType == typeof(int))
+            else if (meta.ElementType == typeof(long))
             {
-                // Length input - CRITICAL FIX: Ensure dimensions match exactly [1] not scalar or [1,1] unless specified
-                // The error 39 vs 77 suggests a broadcasting mismatch between sequence length and positional embeddings
-
-                if (meta.ElementType == typeof(int))
-                {
-                    var intLengthTensor = new DenseTensor<int>(new int[] { numFrames }, new[] { 1 });
-                    inputs.Add(NamedOnnxValue.CreateFromTensor(name, intLengthTensor));
-                }
-                else
-                {
-                    // Some models fail if length is not exactly rank-1 tensor of size [1]
-                    inputs.Add(NamedOnnxValue.CreateFromTensor(name, lengthTensor));
-                }
+                // Use original audio length for length parameter
+                var lengthValue = new DenseTensor<long>(new long[] { audioSampleLength }, new[] { 1 });
+                inputs.Add(NamedOnnxValue.CreateFromTensor(name, lengthValue));
+                _logger.LogDebug("Added long input '{Name}' with value [{Value}]", name, audioSampleLength);
+            }
+            else if (meta.ElementType == typeof(int))
+            {
+                // Some models use int32 for length
+                var lengthValue = new DenseTensor<int>(new int[] { (int)audioSampleLength }, new[] { 1 });
+                inputs.Add(NamedOnnxValue.CreateFromTensor(name, lengthValue));
+                _logger.LogDebug("Added int input '{Name}' with value [{Value}]", name, (int)audioSampleLength);
             }
         }
 
