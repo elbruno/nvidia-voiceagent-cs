@@ -120,25 +120,48 @@ public class AsrService : IAsrService, IDisposable
     {
         var basePath = _config.AsrModelPath;
 
-        // Try various common ONNX model filenames
+        // For Parakeet-TDT model, prioritize encoder.onnx (decoder is incompatible with current pipeline)
         string[] possibleNames =
         {
-            "encoder.onnx",
-            "model.onnx",
-            "parakeet.onnx",
-            "asr.onnx"
+            "encoder.onnx",      // Parakeet encoder (preferred)
+            "model.onnx",         // Generic model file
+            "parakeet.onnx",      // Alternative Parakeet name
+            "asr.onnx"            // Generic ASR name
         };
 
         // Check if basePath is directly an ONNX file
         if (File.Exists(basePath) && basePath.EndsWith(".onnx", StringComparison.OrdinalIgnoreCase))
         {
+            // Avoid loading decoder.onnx directly (incompatible with current pipeline)
+            if (basePath.EndsWith("decoder.onnx", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Cannot load decoder.onnx directly - it requires a dual-model inference pipeline. Use encoder.onnx instead.");
+                return null;
+            }
             return basePath;
         }
 
         // Check if basePath is a directory
         if (Directory.Exists(basePath))
         {
-            foreach (var name in possibleNames)
+            // First priority: encoder.onnx in onnx subdirectory (Parakeet layout)
+            var encoderPath = Path.Combine(basePath, "onnx", "encoder.onnx");
+            if (File.Exists(encoderPath))
+            {
+                _logger.LogDebug("Found encoder.onnx in onnx/ subdirectory");
+                return encoderPath;
+            }
+
+            // Second priority: search for encoder.onnx in any subdirectory
+            var encoderSearch = Directory.GetFiles(basePath, "encoder.onnx", SearchOption.AllDirectories);
+            if (encoderSearch.Length > 0)
+            {
+                _logger.LogDebug("Found encoder.onnx in subdirectory: {Path}", encoderSearch[0]);
+                return encoderSearch[0];
+            }
+
+            // Other model files
+            foreach (var name in possibleNames.Skip(1))
             {
                 var fullPath = Path.Combine(basePath, name);
                 if (File.Exists(fullPath))
@@ -147,10 +170,13 @@ public class AsrService : IAsrService, IDisposable
                 }
             }
 
-            // Try to find any .onnx file
-            var onnxFiles = Directory.GetFiles(basePath, "*.onnx", SearchOption.AllDirectories);
+            // Try to find any .onnx file (skip decoder.onnx)
+            var onnxFiles = Directory.GetFiles(basePath, "*.onnx", SearchOption.AllDirectories)
+                .Where(f => !f.EndsWith("decoder.onnx", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
             if (onnxFiles.Length > 0)
             {
+                _logger.LogDebug("Found ONNX file: {Path}", onnxFiles[0]);
                 return onnxFiles[0];
             }
         }
@@ -169,28 +195,43 @@ public class AsrService : IAsrService, IDisposable
         if (_modelDownloadService != null && _modelDownloadService.IsModelAvailable(ModelType.Asr))
         {
             var hubPath = _modelDownloadService.GetModelPath(ModelType.Asr);
-            if (hubPath != null)
+            if (hubPath != null && Directory.Exists(hubPath))
             {
-                // GetModelPath returns a directory, so find the actual .onnx file
-                if (Directory.Exists(hubPath))
+                // Priority 1: encoder.onnx in onnx/ subdirectory
+                var encoderPath = Path.Combine(hubPath, "onnx", "encoder.onnx");
+                if (File.Exists(encoderPath))
                 {
-                    foreach (var name in possibleNames)
-                    {
-                        var fullPath = Path.Combine(hubPath, name);
-                        if (File.Exists(fullPath))
-                        {
-                            _logger.LogInformation("Found ASR model via ModelHub at {Path}", fullPath);
-                            return fullPath;
-                        }
-                    }
+                    _logger.LogInformation("Found ASR model via ModelHub at {Path}", encoderPath);
+                    return encoderPath;
+                }
 
-                    // Try to find any .onnx file in the directory
-                    var onnxFiles = Directory.GetFiles(hubPath, "*.onnx", SearchOption.AllDirectories);
-                    if (onnxFiles.Length > 0)
+                // Priority 2: encoder.onnx anywhere in the directory
+                var encoderSearch = Directory.GetFiles(hubPath, "encoder.onnx", SearchOption.AllDirectories);
+                if (encoderSearch.Length > 0)
+                {
+                    _logger.LogInformation("Found ASR model via ModelHub at {Path}", encoderSearch[0]);
+                    return encoderSearch[0];
+                }
+
+                // Priority 3: Other model files (excluding decoder.onnx)
+                foreach (var name in possibleNames.Skip(1))
+                {
+                    var fullPath = Path.Combine(hubPath, name);
+                    if (File.Exists(fullPath))
                     {
-                        _logger.LogInformation("Found ASR model via ModelHub at {Path}", onnxFiles[0]);
-                        return onnxFiles[0];
+                        _logger.LogInformation("Found ASR model via ModelHub at {Path}", fullPath);
+                        return fullPath;
                     }
+                }
+
+                // Priority 4: Any .onnx file except decoder.onnx
+                var onnxFiles = Directory.GetFiles(hubPath, "*.onnx", SearchOption.AllDirectories)
+                    .Where(f => !f.EndsWith("decoder.onnx", StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                if (onnxFiles.Length > 0)
+                {
+                    _logger.LogInformation("Found ASR model via ModelHub at {Path}", onnxFiles[0]);
+                    return onnxFiles[0];
                 }
             }
         }

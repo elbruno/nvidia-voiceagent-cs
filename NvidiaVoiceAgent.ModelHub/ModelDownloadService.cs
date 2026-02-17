@@ -116,11 +116,17 @@ public class ModelDownloadService : IModelDownloadService
             var lastReportedProgress = -1;
             var progress = new Progress<int>(progressPercent =>
             {
+                // Clamp progressPercent to 0-100 range to handle edge cases or HFDownloader anomalies
+                int clampedPercent = Math.Max(0, Math.Min(100, progressPercent));
+
                 // Only report every 5% to avoid spamming logs
-                if (progressPercent >= lastReportedProgress + 5 || progressPercent == 100)
+                if (clampedPercent >= lastReportedProgress + 5 || clampedPercent == 100)
                 {
-                    lastReportedProgress = progressPercent;
-                    var bytesDownloaded = (long)(model.ExpectedSizeBytes * progressPercent / 100.0);
+                    lastReportedProgress = clampedPercent;
+                    var bytesDownloaded = (long)(model.ExpectedSizeBytes * clampedPercent / 100.0);
+                    // Ensure bytesDownloaded doesn't exceed TotalBytes
+                    bytesDownloaded = Math.Min(bytesDownloaded, model.ExpectedSizeBytes);
+
                     _progressReporter.Report(new DownloadProgress
                     {
                         ModelName = model.Name,
