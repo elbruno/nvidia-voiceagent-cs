@@ -759,9 +759,9 @@
                 const statusLabel = m.status === 'downloaded' ? '✅ Downloaded'
                     : m.status === 'downloading' ? '📥 Downloading'
                     : '❌ Not Downloaded';
-                const sizeMb = m.expected_size_mb.toFixed(1);
-                const showDownloadBtn = m.status !== 'downloaded' && m.is_available_for_download;
-                const showComingSoon = m.status !== 'downloaded' && !m.is_available_for_download;
+                const sizeMb = m.expectedSizeMb.toFixed(1);
+                const showDownloadBtn = m.status !== 'downloaded' && m.isAvailableForDownload;
+                const showComingSoon = m.status !== 'downloaded' && !m.isAvailableForDownload;
                 const showDeleteBtn = m.status === 'downloaded';
 
                 card.innerHTML = `
@@ -769,8 +769,8 @@
                         <div class="model-card-info">
                             <div class="model-card-name">${esc(m.name)} <span class="model-type-badge">${esc(m.type)}</span></div>
                             <div class="model-card-meta">
-                                <a href="https://huggingface.co/${esc(m.repo_id)}" target="_blank" rel="noopener">${esc(m.repo_id)}</a>
-                                &nbsp;·&nbsp;${sizeMb} MB${m.is_required ? ' · <strong>required</strong>' : ''}
+                                <a href="https://huggingface.co/${esc(m.repoId)}" target="_blank" rel="noopener">${esc(m.repoId)}</a>
+                                &nbsp;·&nbsp;${sizeMb} MB${m.isRequired ? ' · <strong>required</strong>' : ''}
                             </div>
                         </div>
                         <div class="model-card-status">
@@ -780,7 +780,7 @@
                             <span class="status-badge ${statusClass}" id="model-badge-${idx}">${statusLabel}</span>
                         </div>
                     </div>
-                    <div class="model-card-path ${m.local_path ? 'visible' : ''}" id="model-path-${idx}">${m.local_path ? esc(m.local_path) : ''}</div>
+                    <div class="model-card-path ${m.localPath ? 'visible' : ''}" id="model-path-${idx}">${m.localPath ? esc(m.localPath) : ''}</div>
                     <div class="model-card-progress" id="model-progress-${idx}">
                         <div class="progress-bar-bg"><div class="progress-bar-fill" id="model-bar-${idx}"></div></div>
                         <div class="progress-text" id="model-pct-${idx}"></div>
