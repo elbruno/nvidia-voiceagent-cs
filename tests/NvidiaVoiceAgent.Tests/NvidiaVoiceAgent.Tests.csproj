@@ -25,4 +25,10 @@
     <ProjectReference Include="..\..\NvidiaVoiceAgent\NvidiaVoiceAgent.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="TestData\*.wav">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
