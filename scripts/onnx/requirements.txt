@@ -1,0 +1,11 @@
+# Python dependencies for the ONNX model scripts.
+#
+# Install with:
+#   pip install -r scripts/onnx/requirements.txt
+#
+# These are NOT needed to run the C# application itself — only for
+# inspecting, patching, and verifying the ONNX models offline.
+
+onnx>=1.15.0
+onnxruntime>=1.17.0
+numpy>=1.24.0
