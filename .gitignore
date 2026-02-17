@@ -50,4 +50,8 @@ model-cache/
 # Local env files
 .env
 *.local
-appsettings.Development.json
+
+# Configuration files with secrets
+appsettings.json
+appsettings.*.json
+!appsettings.Development.json.example

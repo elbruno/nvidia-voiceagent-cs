@@ -59,47 +59,47 @@ If you don't have one already:
 5. **Copy the token immediately** — it will only be shown once!  
    Format: `hf_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX`
 
-### 4. Add Token to appsettings.json
+### 4. Configure Your Token
 
-Open `NvidiaVoiceAgent/appsettings.json` and add your token:
+You have three options for configuring your HuggingFace token, listed from most secure to least secure:
 
-```json
-{
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information",
-      "Microsoft.AspNetCore": "Warning"
-    }
-  },
-  "AllowedHosts": "*",
-  "ModelHub": {
-    "AutoDownload": true,
-    "UseInt8Quantization": true,
-    "ModelCachePath": "model-cache",
-    "HuggingFaceToken": "hf_your_actual_token_here"
-  }
-}
-```
+#### Option 1: User Secrets (Recommended for Development)
 
-Replace `"hf_your_actual_token_here"` with your actual token.
+The most secure way for local development is to use .NET User Secrets:
 
----
+1. Navigate to the project directory:
+   ```bash
+   cd NvidiaVoiceAgent
+   ```
 
-## Security Best Practices
+2. Initialize user secrets (if not already done):
+   ```bash
+   dotnet user-secrets init
+   ```
 
-### ⚠️ Never Commit Tokens to Git
+3. Set your HuggingFace token:
+   ```bash
+   dotnet user-secrets set "ModelHub:HuggingFaceToken" "hf_your_actual_token_here"
+   ```
 
-Add this to your `.gitignore`:
+4. Verify it was set correctly:
+   ```bash
+   dotnet user-secrets list
+   ```
 
-```
-appsettings.json
-appsettings.*.json
-!appsettings.Development.json.example
-```
+**Benefits:**
+- Token is stored outside the project directory
+- Never accidentally committed to Git
+- Specific to your user account on your machine
+- Automatically loaded in Development environment
 
-### ✅ Use Environment Variables (Production)
+**Location:**
+- **Windows**: `%APPDATA%\Microsoft\UserSecrets\nvidia-voiceagent-cs-secrets\secrets.json`
+- **Linux/macOS**: `~/.microsoft/usersecrets/nvidia-voiceagent-cs-secrets/secrets.json`
 
-For production deployments, use environment variables instead:
+#### Option 2: Environment Variables (Recommended for Production)
+
+For production deployments, use environment variables:
 
 **Linux/macOS:**
 ```bash
@@ -118,6 +118,47 @@ dotnet run
 environment:
   - ModelHub__HuggingFaceToken=hf_your_token_here
 ```
+
+#### Option 3: Configuration File (Least Secure)
+
+> ⚠️ **Warning**: Only use this for testing. Never commit tokens to source control!
+
+Create `appsettings.Development.json` from the example:
+
+```bash
+cp appsettings.Development.json.example appsettings.Development.json
+```
+
+Then edit and replace `"hf_your_actual_token_here"` with your actual token:
+
+```json
+{
+  "ModelHub": {
+    "HuggingFaceToken": "hf_your_actual_token_here"
+  }
+}
+```
+
+**Note:** This file is gitignored and will not be committed.
+
+---
+
+## Security Best Practices
+
+### ✅ Recommended: User Secrets (Development)
+
+For local development, **always use User Secrets** as described in Option 1 above. This ensures:
+- Tokens are never in your project directory
+- No risk of accidental commits
+- Easy to manage per-developer configuration
+
+### ⚠️ Configuration Files are Now Gitignored
+
+As of the latest version, the following files are excluded from Git:
+- `appsettings.json`
+- `appsettings.*.json` (except the example file)
+
+This prevents accidental token commits. Use User Secrets or Environment Variables instead.
 
 ### 🔒 Use Azure Key Vault (Enterprise)
 
