@@ -57,13 +57,25 @@ git clone https://github.com/elbruno/nvidia-voiceagent-cs.git
 cd nvidia-voiceagent-cs
 dotnet build
 
+# (First-time) install Python helpers for model preparation
+pip install -r scripts/onnx/requirements.txt
+
+# (First-time) prepare Parakeet-TDT ASR model
+python scripts/onnx/patch_encoder.py --model-dir model-cache/parakeet-tdt-0.6b/onnx
+python scripts/onnx/patch_decoder.py --model-dir model-cache/parakeet-tdt-0.6b/onnx
+python scripts/onnx/extract_vocab.py --model-dir model-cache/parakeet-tdt-0.6b
+
+# (Windows) run all ASR prep steps at once
+pwsh -File scripts/onnx/prepare-models.ps1 -ModelCachePath model-cache
+
 # Run the app
 cd NvidiaVoiceAgent
 dotnet run
 ```
 
-Open **<http://localhost:5003>** in your browser. The app auto-downloads the ASR model on first run (~1.2 GB).
+Open **<http://localhost:5003>** in your browser. The app auto-downloads models into `ModelHub:ModelCachePath` on first run.
 
+> **First-time setup:** See the full step-by-step guide at `docs/guides/model-preparation.md`.
 > **No GPU?** The app works on CPU and falls back to Mock Mode if models are unavailable.
 
 ## Run Tests

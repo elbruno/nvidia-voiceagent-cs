@@ -12,6 +12,67 @@ This guide standardizes the **one-time model setup** required to run the NVIDIA 
 
 ---
 
+## First-time setup (step-by-step)
+
+1. **Set your model cache path**
+
+  Decide where models should live (recommended: `model-cache/`) and update:
+
+- `ModelHub:ModelCachePath`
+- `ModelConfig:*Path` values
+
+1. **Download models**
+
+  Start the app or use the Models UI/API to download:
+
+- **Required**: Parakeet-TDT (ASR)
+- **Optional**: PersonaPlex, FastPitch, HiFiGAN, TinyLlama
+
+1. **Install Python helpers (one time)**
+
+  ```bash
+  pip install -r scripts/onnx/requirements.txt
+  ```
+
+1. **Patch Parakeet-TDT encoder**
+
+  ```bash
+  python scripts/onnx/patch_encoder.py --model-dir model-cache/parakeet-tdt-0.6b/onnx
+  ```
+
+1. **Patch Parakeet-TDT decoder**
+
+  ```bash
+  python scripts/onnx/patch_decoder.py --model-dir model-cache/parakeet-tdt-0.6b/onnx
+  ```
+
+1. **Generate vocab.txt**
+
+  ```bash
+  python scripts/onnx/extract_vocab.py --model-dir model-cache/parakeet-tdt-0.6b
+  ```
+
+1. **Verify encoder sanity**
+
+  ```bash
+  python scripts/onnx/verify_encoder.py --model-path model-cache/parakeet-tdt-0.6b/onnx/encoder.onnx
+  ```
+
+1. **Run the app**
+
+  ```bash
+  cd NvidiaVoiceAgent
+  dotnet run
+  ```
+
+> **Windows shortcut:** You can run the full ASR preparation flow with:
+>
+> ```powershell
+> .\scripts\onnx\prepare-models.ps1 -ModelCachePath model-cache
+> ```
+
+---
+
 ## 1) Choose a model storage layout
 
 You can store models in **one place** and point the app to that location.
