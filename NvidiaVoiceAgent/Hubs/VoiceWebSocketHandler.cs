@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using NvidiaVoiceAgent.Core.Models;
 using NvidiaVoiceAgent.Core.Services;
 using NvidiaVoiceAgent.Models;
 using NvidiaVoiceAgent.Services;
@@ -11,6 +12,10 @@ namespace NvidiaVoiceAgent.Hubs;
 /// WebSocket handler for voice processing (/ws/voice).
 /// Receives binary audio, processes through ASR → LLM → TTS pipeline,
 /// returns synthesized audio response.
+/// 
+/// Supports two modes:
+/// 1. Standard Mode: Send complete audio chunk, receive full response
+/// 2. Realtime Mode (Phase 1): Continuous audio buffering with pause detection
 /// </summary>
 public class VoiceWebSocketHandler
 {
@@ -20,6 +25,8 @@ public class VoiceWebSocketHandler
     private readonly ITtsService? _ttsService;
     private readonly ILlmService? _llmService;
     private readonly IAudioProcessor? _audioProcessor;
+    private readonly AudioStreamBuffer _audioStreamBuffer;
+    private readonly IVoiceActivityDetector _vad;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -28,6 +35,8 @@ public class VoiceWebSocketHandler
 
     public VoiceWebSocketHandler(
         ILogger<VoiceWebSocketHandler> logger,
+        AudioStreamBuffer audioStreamBuffer,
+        IVoiceActivityDetector vad,
         ILogBroadcaster? logBroadcaster = null,
         IAsrService? asrService = null,
         ITtsService? ttsService = null,
@@ -35,6 +44,8 @@ public class VoiceWebSocketHandler
         IAudioProcessor? audioProcessor = null)
     {
         _logger = logger;
+        _audioStreamBuffer = audioStreamBuffer;
+        _vad = vad;
         _logBroadcaster = logBroadcaster;
         _asrService = asrService;
         _ttsService = ttsService;
@@ -44,6 +55,7 @@ public class VoiceWebSocketHandler
 
     /// <summary>
     /// Handle an incoming WebSocket connection for voice processing.
+    /// Supports both standard and realtime conversation modes.
     /// </summary>
     public async Task HandleAsync(WebSocket webSocket, CancellationToken cancellationToken)
     {
@@ -53,6 +65,21 @@ public class VoiceWebSocketHandler
         var sessionState = new VoiceSessionState();
         var buffer = new byte[256 * 1024]; // 256KB buffer for audio chunks
         var messageBuffer = new MemoryStream();
+
+        // Realtime mode: subscribe to pause detection events
+        EventHandler? pauseHandler = null;
+        if (sessionState.RealtimeMode)
+        {
+            pauseHandler = async (s, e) =>
+            {
+                var pendingAudio = _audioStreamBuffer.GetAndClear();
+                if (pendingAudio.Length > 0)
+                {
+                    await ProcessAudioChunkAsync(webSocket, pendingAudio, sessionState, cancellationToken);
+                }
+            };
+            _audioStreamBuffer.OnPauseDetected += pauseHandler;
+        }
 
         try
         {
@@ -95,6 +122,15 @@ public class VoiceWebSocketHandler
         catch (OperationCanceledException)
         {
             _logger.LogInformation("Voice WebSocket connection cancelled");
+        }
+        finally
+        {
+            // Cleanup realtime mode handler
+            if (pauseHandler != null)
+            {
+                _audioStreamBuffer.OnPauseDetected -= pauseHandler;
+            }
+            _audioStreamBuffer.Clear();
         }
 
         _logger.LogInformation("Voice WebSocket connection closed");
@@ -153,6 +189,26 @@ public class VoiceWebSocketHandler
             _logger.LogInformation("Smart model set to: {SmartModel}", sessionState.SmartModel);
             await BroadcastLogAsync($"Smart model set to: {sessionState.SmartModel}");
         }
+
+        // Support for realtime mode config (added in Phase 1)
+        // Example: { "type": "config", "realtimeMode": true, "pauseThresholdMs": 800 }
+        var configJson = JsonSerializer.Serialize(message, JsonOptions);
+        using var configDoc = JsonDocument.Parse(configJson);
+        var root = configDoc.RootElement;
+
+        if (root.TryGetProperty("realtimeMode", out var realtimeModeElem) && realtimeModeElem.ValueKind == JsonValueKind.True)
+        {
+            sessionState.RealtimeMode = true;
+            _logger.LogInformation("Realtime conversation mode enabled");
+            await BroadcastLogAsync("✨ Realtime conversation mode enabled");
+        }
+
+        if (root.TryGetProperty("pauseThresholdMs", out var thresholdElem) && thresholdElem.TryGetInt32(out int threshold))
+        {
+            sessionState.PauseThresholdMs = threshold;
+            _logger.LogInformation("Pause threshold set to: {Threshold}ms", threshold);
+            await BroadcastLogAsync($"Pause threshold: {threshold}ms");
+        }
     }
 
     private async Task HandleBinaryMessageAsync(
@@ -170,13 +226,59 @@ public class VoiceWebSocketHandler
             float[] samples = DecodeWavAudio(audioData);
             _logger.LogDebug("Decoded {Samples} audio samples", samples.Length);
 
-            // Step 2: Run ASR to get transcript
-            string transcript = await RunAsrAsync(samples, cancellationToken);
-            _logger.LogInformation("ASR transcript: {Transcript}", transcript);
+            if (sessionState.RealtimeMode)
+            {
+                // Realtime mode: buffer audio and detect pauses
+                _audioStreamBuffer.AddSamples(samples);
+
+                // Send buffer status to client
+                var bufferStatus = new { type = "buffer_status", fillPercent = _audioStreamBuffer.FillPercentage, sampleCount = _audioStreamBuffer.SampleCount };
+                await SendJsonAsync(webSocket, bufferStatus, cancellationToken);
+            }
+            else
+            {
+                // Standard mode: Process immediately (existing behavior)
+                await ProcessAudioChunkAsync(webSocket, samples, sessionState, cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing audio");
+            await BroadcastLogAsync($"Error processing audio: {ex.Message}", "error");
+        }
+    }
+
+    /// <summary>
+    /// Process a single audio chunk (for both realtime and standard modes).
+    /// </summary>
+    private async Task ProcessAudioChunkAsync(
+        WebSocket webSocket,
+        float[] audioSamples,
+        VoiceSessionState sessionState,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Step 2: Run ASR to get transcript (with confidence for streaming)
+            var (transcript, confidence) = await RunAsrPartialAsync(audioSamples, cancellationToken);
+            _logger.LogInformation("ASR transcript: {Transcript} (confidence: {Conf})", transcript, confidence);
             await BroadcastLogAsync($"ASR transcript: {transcript}");
 
-            // Send transcript to client
-            await SendJsonAsync(webSocket, new TranscriptResponse { Transcript = transcript }, cancellationToken);
+            // Send partial transcript with confidence
+            if (sessionState.RealtimeMode)
+            {
+                await SendJsonAsync(webSocket, new PartialTranscriptResponse
+                {
+                    Transcript = transcript,
+                    Confidence = confidence,
+                    IsPartial = true
+                }, cancellationToken);
+            }
+            else
+            {
+                // Standard mode: use old response format for compatibility
+                await SendJsonAsync(webSocket, new TranscriptResponse { Transcript = transcript }, cancellationToken);
+            }
 
             // Step 3: Determine response text
             string responseText;
@@ -206,18 +308,37 @@ public class VoiceWebSocketHandler
             string audioBase64 = Convert.ToBase64String(responseAudio);
             await BroadcastLogAsync($"Generated {responseAudio.Length} bytes of TTS audio");
 
-            // Step 5: Send full response
-            var response = new VoiceResponse
+            // Step 5: Send final response
+            if (sessionState.RealtimeMode)
             {
-                Transcript = transcript,
-                Response = responseText,
-                Audio = audioBase64
-            };
-            await SendJsonAsync(webSocket, response, cancellationToken);
+                // Realtime mode: send partial LLM response and audio chunks
+                await SendJsonAsync(webSocket, new PartialLlmResponse
+                {
+                    Text = responseText,
+                    IsComplete = true
+                }, cancellationToken);
+
+                await SendJsonAsync(webSocket, new AudioStreamChunk
+                {
+                    AudioBase64 = audioBase64,
+                    IsFinal = true
+                }, cancellationToken);
+            }
+            else
+            {
+                // Standard mode: send full response (existing format)
+                var response = new VoiceResponse
+                {
+                    Transcript = transcript,
+                    Response = responseText,
+                    Audio = audioBase64
+                };
+                await SendJsonAsync(webSocket, response, cancellationToken);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing audio");
+            _logger.LogError(ex, "Error processing audio chunk");
             await BroadcastLogAsync($"Error processing audio: {ex.Message}", "error");
         }
     }
@@ -246,6 +367,22 @@ public class VoiceWebSocketHandler
         _logger.LogWarning("ASR service not available, returning mock transcript");
         await Task.Delay(100, cancellationToken);
         return "Hello, this is a test transcription.";
+    }
+
+    /// <summary>
+    /// Run ASR with partial result capability (new for Phase 1).
+    /// </summary>
+    private async Task<(string transcript, float confidence)> RunAsrPartialAsync(float[] samples, CancellationToken cancellationToken)
+    {
+        if (_asrService != null)
+        {
+            return await _asrService.TranscribePartialAsync(samples, cancellationToken);
+        }
+
+        // Fallback
+        _logger.LogWarning("ASR service not available, returning mock transcript");
+        await Task.Delay(100, cancellationToken);
+        return ("Hello, this is a test transcription.", 0.8f);
     }
 
     private async Task<string> RunLlmAsync(string prompt, VoiceSessionState sessionState, CancellationToken cancellationToken)

@@ -32,6 +32,10 @@ builder.Services.AddSingleton<ILogBroadcaster, LogBroadcaster>();
 // to broadcast download progress to WebSocket clients
 builder.Services.AddSingleton<IProgressReporter, WebProgressReporter>();
 
+// Register real-time conversation mode services (Phase 1)
+builder.Services.AddSingleton<AudioStreamBuffer>();
+builder.Services.AddSingleton<IVoiceActivityDetector, EnergyBasedVad>();
+
 // Register WebSocket handlers
 builder.Services.AddSingleton<VoiceWebSocketHandler>();
 builder.Services.AddSingleton<LogsWebSocketHandler>();

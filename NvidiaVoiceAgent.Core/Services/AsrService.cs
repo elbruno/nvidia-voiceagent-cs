@@ -69,6 +69,39 @@ public class AsrService : IAsrService, IDisposable
         }
     }
 
+    public async Task<(string transcript, float confidence)> TranscribePartialAsync(
+        float[] audioSamples,
+        CancellationToken cancellationToken = default)
+    {
+        // Ensure model is loaded (lazy loading)
+        if (!_isModelLoaded)
+        {
+            await LoadModelAsync(cancellationToken);
+        }
+
+        // Mock mode when no model is available
+        if (_isMockMode)
+        {
+            var mockTranscript = GenerateMockTranscript(audioSamples);
+            return (mockTranscript, 0.8f); // Mock confidence
+        }
+
+        try
+        {
+            var result = await Task.Run(() => RunInference(audioSamples), cancellationToken);
+
+            // For partial results, estimate confidence based on audio length and energy
+            float confidence = EstimateConfidence(audioSamples);
+
+            return (result, confidence);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ASR inference failed");
+            return ("[Transcription error]", 0.0f);
+        }
+    }
+
     public async Task LoadModelAsync(CancellationToken cancellationToken = default)
     {
         if (_isModelLoaded) return;
@@ -513,6 +546,37 @@ public class AsrService : IAsrService, IDisposable
             .Trim();
 
         return text;
+    }
+
+    /// <summary>
+    /// Estimate confidence level based on audio characteristics.
+    /// Used for partial/streaming ASR results.
+    /// </summary>
+    private float EstimateConfidence(float[] audioSamples)
+    {
+        if (audioSamples == null || audioSamples.Length < 1600) // Less than 0.1s
+            return 0.3f;
+
+        // Calculate RMS energy as an indicator of clear speech
+        float sumSquares = 0;
+        for (int i = 0; i < audioSamples.Length; i++)
+        {
+            sumSquares += audioSamples[i] * audioSamples[i];
+        }
+        float rmsEnergy = (float)Math.Sqrt(sumSquares / audioSamples.Length);
+
+        // Map RMS energy to confidence (0.0-1.0)
+        // Typical speech: 0.01-0.5
+        float confidence = Math.Min(1.0f, rmsEnergy / 0.1f);
+
+        // Adjust based on duration
+        var duration = audioSamples.Length / 16000.0;
+        if (duration < 0.5)
+            confidence *= 0.7f; // Lower confidence for very short clips
+        else if (duration > 5.0)
+            confidence *= 0.95f; // Increase confidence for longer, complete utterances
+
+        return Math.Max(0.1f, Math.Min(1.0f, confidence));
     }
 
     private string GenerateMockTranscript(float[] audioSamples)

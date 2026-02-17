@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NvidiaVoiceAgent.Core.Models;
@@ -138,7 +139,7 @@ public class PersonaPlexService : IPersonaPlexService, ILlmService, IDisposable
 
         // TODO: Implement actual PersonaPlex text-to-text inference
         _logger.LogDebug("Generating PersonaPlex response for prompt: {Prompt}", prompt);
-        
+
         try
         {
             // TODO: Convert text prompt to speech internally (or use text tokens)
@@ -153,6 +154,70 @@ public class PersonaPlexService : IPersonaPlexService, ILlmService, IDisposable
         {
             _logger.LogError(ex, "PersonaPlex inference failed");
             return "[PersonaPlex Error] Failed to generate response.";
+        }
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<string> GenerateResponseStreamAsync(
+        string prompt,
+        List<ChatMessage>? chatHistory = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        // Ensure model is loaded (lazy loading)
+        if (!_isModelLoaded)
+        {
+            await LoadModelAsync(cancellationToken);
+        }
+
+        if (_isMockMode)
+        {
+            // Mock mode: Simulate streaming response by yielding word by word
+            _logger.LogDebug("Generating mock PersonaPlex streaming response for prompt: {Prompt}", prompt);
+
+            var mockResponse = $"I heard you say: \"{prompt}\". This is a simulated streaming response.";
+            var words = mockResponse.Split(' ');
+            var accumulated = "";
+
+            foreach (var word in words)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                accumulated += word + " ";
+                yield return accumulated;
+                await Task.Delay(50, cancellationToken); // Simulate word-by-word generation
+            }
+            yield break;
+        }
+
+        // TODO: Implement actual PersonaPlex streaming inference
+        _logger.LogDebug("Generating PersonaPlex streaming response for prompt: {Prompt}", prompt);
+
+        string fullResponse;
+        try
+        {
+            // For now, generate the full response
+            fullResponse = await GenerateResponseAsync(prompt, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "PersonaPlex streaming inference failed");
+            fullResponse = "[PersonaPlex Error] Failed to generate streaming response.";
+        }
+
+        // Stream the response word-by-word
+        var responseWords = fullResponse.Split(' ');
+        var accumulatedResponse = "";
+
+        foreach (var word in responseWords)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            accumulatedResponse += word + " ";
+            yield return accumulatedResponse;
+
+            // Only delay if not an error message
+            if (!fullResponse.Contains("Error"))
+            {
+                await Task.Delay(30, cancellationToken); // Simulate streaming
+            }
         }
     }
 
@@ -175,7 +240,7 @@ public class PersonaPlexService : IPersonaPlexService, ILlmService, IDisposable
 
         // TODO: Implement actual PersonaPlex speech-to-speech inference
         _logger.LogDebug("Generating PersonaPlex speech response for {Samples} samples", audioSamples.Length);
-        
+
         try
         {
             // TODO: 
@@ -255,7 +320,7 @@ public class PersonaPlexService : IPersonaPlexService, ILlmService, IDisposable
 
         // TODO: Dispose TorchSharp resources
         // _model?.Dispose();
-        
+
         _loadLock?.Dispose();
         _disposed = true;
         GC.SuppressFinalize(this);

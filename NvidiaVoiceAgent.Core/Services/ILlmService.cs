@@ -1,3 +1,5 @@
+using NvidiaVoiceAgent.Core.Models;
+
 namespace NvidiaVoiceAgent.Core.Services;
 
 /// <summary>
@@ -13,6 +15,19 @@ public interface ILlmService
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Generated response text</returns>
     Task<string> GenerateResponseAsync(string prompt, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Generate a streaming response with partial text updates.
+    /// Useful for real-time conversation mode.
+    /// </summary>
+    /// <param name="prompt">User's transcribed speech</param>
+    /// <param name="chatHistory">Previous chat messages for context (optional)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Async enumerable of text tokens/chunks</returns>
+    IAsyncEnumerable<string> GenerateResponseStreamAsync(
+        string prompt,
+        List<ChatMessage>? chatHistory = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Load the LLM model into memory.
