@@ -412,15 +412,13 @@ public class AsrService : IAsrService, IDisposable
 
         var inputTensor = new DenseTensor<float>(inputData, new[] { 1, numMels, numFrames });
 
-        // CRITICAL: The 'length' parameter must match the original audio samples count, NOT mel frames!
-        // Mel frames = ceil(audio_samples / hop_length)
-        // To reverse: audio_samples ≈ numFrames * hop_length
-        // Default hop_length = 160 samples
-        long audioLength = audioSamples.Length;
+        // The 'length' parameter represents the valid number of mel-spectrogram frames.
+        // NOT the raw audio sample count!
+        long audioLength = numFrames;
 
         _logger.LogInformation(
-            "ASR input: audio_signal=[1, {NumMels}, {NumFrames}], length=[{Length}] (from {AudioSamples} samples)",
-            numMels, numFrames, audioLength, audioSamples.Length);
+            "ASR input: audio_signal=[1, {NumMels}, {NumFrames}], length=[{Length}]",
+            numMels, numFrames, audioLength);
 
         var lengthTensor = new DenseTensor<long>(new long[] { audioLength }, new[] { 1 });
 

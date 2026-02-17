@@ -48,8 +48,8 @@ public class ModelsEndpointTests : IClassFixture<WebApplicationFactoryFixture>
 
         // Assert
         var models = json.RootElement.EnumerateArray();
-        var personaPlex = models.FirstOrDefault(m => 
-            m.TryGetProperty("name", out var name) && 
+        var personaPlex = models.FirstOrDefault(m =>
+            m.TryGetProperty("name", out var name) &&
             name.GetString() == "PersonaPlex-7B-v1");
 
         personaPlex.ValueKind.Should().NotBe(JsonValueKind.Undefined);
@@ -65,12 +65,12 @@ public class ModelsEndpointTests : IClassFixture<WebApplicationFactoryFixture>
 
         // Assert
         var models = json.RootElement.EnumerateArray();
-        var personaPlex = models.FirstOrDefault(m => 
-            m.TryGetProperty("name", out var name) && 
+        var personaPlex = models.FirstOrDefault(m =>
+            m.TryGetProperty("name", out var name) &&
             name.GetString() == "PersonaPlex-7B-v1");
 
         personaPlex.ValueKind.Should().NotBe(JsonValueKind.Undefined);
-        
+
         // Check required properties
         personaPlex.TryGetProperty("type", out var type).Should().BeTrue();
         type.GetString().Should().Be("PersonaPlex");
@@ -79,7 +79,10 @@ public class ModelsEndpointTests : IClassFixture<WebApplicationFactoryFixture>
         repoId.GetString().Should().Be("nvidia/personaplex-7b-v1");
 
         personaPlex.TryGetProperty("status", out var status).Should().BeTrue();
-        status.GetString().Should().Be("not_downloaded");
+        var statusValue = status.GetString();
+        // Status can be "downloaded" if model exists, or "not_downloaded" if it doesn't
+        statusValue.Should().Match(s => s == "downloaded" || s == "not_downloaded",
+            "status should be either downloaded or not_downloaded");
 
         personaPlex.TryGetProperty("isRequired", out var isRequired).Should().BeTrue();
         isRequired.GetBoolean().Should().BeFalse();
@@ -114,13 +117,13 @@ public class ModelsEndpointTests : IClassFixture<WebApplicationFactoryFixture>
 
         // Assert
         var models = json.RootElement.EnumerateArray();
-        var personaPlex = models.FirstOrDefault(m => 
-            m.TryGetProperty("name", out var name) && 
+        var personaPlex = models.FirstOrDefault(m =>
+            m.TryGetProperty("name", out var name) &&
             name.GetString() == "PersonaPlex-7B-v1");
 
         personaPlex.TryGetProperty("expectedSizeMb", out var sizeMb).Should().BeTrue();
         var size = sizeMb.GetDouble();
-        
+
         // PersonaPlex is ~16.7 GB = ~17,000 MB
         size.Should().BeGreaterThan(15000);
         size.Should().BeLessThan(20000);

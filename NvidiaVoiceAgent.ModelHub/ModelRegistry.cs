@@ -37,7 +37,7 @@ public class ModelRegistry : IModelRegistry
                 LocalDirectory = "fastpitch-en",
                 IsRequired = false,
                 AdditionalFiles = [],
-                IsAvailableForDownload = false
+                IsAvailableForDownload = true
             },
             new ModelInfo
             {
@@ -49,7 +49,7 @@ public class ModelRegistry : IModelRegistry
                 LocalDirectory = "hifigan-en",
                 IsRequired = false,
                 AdditionalFiles = [],
-                IsAvailableForDownload = false
+                IsAvailableForDownload = true
             },
             new ModelInfo
             {
@@ -61,7 +61,7 @@ public class ModelRegistry : IModelRegistry
                 LocalDirectory = "tinyllama-1.1b",
                 IsRequired = false,
                 AdditionalFiles = [],
-                IsAvailableForDownload = false
+                IsAvailableForDownload = true
             },
             new ModelInfo
             {
