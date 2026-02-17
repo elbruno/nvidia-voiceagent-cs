@@ -141,7 +141,7 @@ public interface IAudioMerger
 
 **Key Logic:**
 
-```
+```plaintext
 Input: 100 seconds of audio, chunk=50s, overlap=2s
 └─ Chunk 0: 0-50s
 ├─ Chunk 1: 48-98s (2s overlap with chunk 0)
@@ -173,7 +173,7 @@ Input: 100 seconds of audio, chunk=50s, overlap=2s
 
 **Key Logic (Greedy String Matching):**
 
-```
+```plaintext
 Chunk 0: "Hello world this is"
 Chunk 1: "this is a test" (2s overlap ≈ 20 tokens)
 
@@ -416,7 +416,7 @@ else if (numFrames > maxFrames)
 ## Success Metrics
 
 | Metric | Target | How to Measure |
-|--------|--------|----------------|
+| --- | --- | --- |
 | Long-form support | 30+ min audio | Test with 30-min sample |
 | Quality preservation | ≥80% match to single-chunk baseline | Compare outputs |
 | Performance | <1 sec overhead | Profile chunking logic |
@@ -428,7 +428,7 @@ else if (numFrames > maxFrames)
 ## Risk Assessment
 
 | Risk | Probability | Impact | Mitigation |
-|------|-------------|--------|-----------|
+| --- | --- | --- | --- |
 | Duplicate text in output | **Medium** | Word repetition | Robust overlap detection + test suite |
 | Word split at boundaries | **High** | Garbled words | 2-second overlap window |
 | Performance regression | **Low** | Slower inference | Benchmark & profile in Phase 5 |
@@ -458,7 +458,7 @@ else if (numFrames > maxFrames)
 
 ## File Structure
 
-```
+```plaintext
 NvidiaVoiceAgent.Core/
 ├── Services/
 │   ├── IAudioChunkingStrategy.cs (NEW)
@@ -484,7 +484,7 @@ NvidiaVoiceAgent.Core.Tests/
 ## Timeline
 
 | Phase | Duration | Start | End |
-|-------|----------|-------|-----|
+| --- | --- | --- | --- |
 | Phase 1: Abstractions | 2h | Day 1 | Day 1 |
 | Phase 2: Chunker | 3h | Day 1 | Day 2 |
 | Phase 3: Merger | 3h | Day 2 | Day 2 |
@@ -497,25 +497,25 @@ NvidiaVoiceAgent.Core.Tests/
 
 ## Decision Log
 
-**Decision 1: Overlapping vs. Context-Window Approach**
+### Decision 1: Overlapping vs. Context-Window Approach
 
 - ✅ **Chosen:** Overlapping chunks
 - **Reasoning:** Parakeet encoder is stateless; overlap is simpler than maintaining hidden state
 - **Alternative:** Store hidden states between chunks (complex, not needed for CTC)
 
-**Decision 2: Fixed-size vs. Dynamic Chunks**
+### Decision 2: Fixed-size vs. Dynamic Chunks
 
 - ✅ **Chosen:** Fixed-size chunks
 - **Reasoning:** Predictable memory, simpler to implement, configurable
 - **Alternative:** Dynamic sizing based on silence (complex, premature optimization)
 
-**Decision 3: Where to Implement Chunking**
+### Decision 3: Where to Implement Chunking
 
 - ✅ **Chosen:** In `ParakeetTdtAdapter` (model-specific)
 - **Reasoning:** Different models may need different strategies; isolates complexity
 - **Alternative:** In `AudioProcessor` (too generic, affects all models)
 
-**Decision 4: Merge Strategy**
+### Decision 4: Merge Strategy
 
 - ✅ **Chosen:** String-based greedy matching on overlap region
 - **Reasoning:** Simple, no dependencies, works with any ASR output

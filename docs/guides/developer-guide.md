@@ -29,7 +29,7 @@ dotnet test
 
 Each C# class, interface, enum, or record **must** be in its own file. The filename must match the type name exactly.
 
-```
+```csharp
 Services/
 ├── AsrService.cs          → class AsrService
 ├── IAsrService.cs         → interface IAsrService
@@ -42,7 +42,7 @@ Services/
 ### Naming Standards
 
 | Element | Convention | Example |
-|---------|-----------|---------|
+| --- | --- | --- |
 | Interfaces | `I{Name}` | `IAsrService`, `IAudioProcessor` |
 | Implementations | `{Name}` | `AsrService`, `AudioProcessor` |
 | WebSocket handlers | `{Name}WebSocketHandler` | `VoiceWebSocketHandler` |
@@ -121,7 +121,7 @@ public void Dispose()
 ### Where code lives
 
 | Type of code | Project | Namespace |
-|-------------|---------|-----------|
+| --- | --- | --- |
 | ML inference services | `NvidiaVoiceAgent.Core` | `NvidiaVoiceAgent.Core.Services` |
 | Audio processing | `NvidiaVoiceAgent.Core` | `NvidiaVoiceAgent.Core.Services` |
 | Model configuration | `NvidiaVoiceAgent.Core` | `NvidiaVoiceAgent.Core.Models` |
@@ -159,6 +159,98 @@ Follow the existing pattern:
 4. Add to solution: edit `NvidiaVoiceAgent.slnx`
 5. Create test project: `tests/NvidiaVoiceAgent.NewLib.Tests/`
 6. Keep dependencies minimal — no ASP.NET packages in class libraries
+
+## Audio Chunking for Long-Form ASR
+
+The Parakeet-TDT ASR model has a maximum input length of ~60 seconds. For longer audio, the system automatically uses an **overlapping chunk** strategy.
+
+### How It Works
+
+When audio exceeds the model's limit:
+
+1. **Chunking** - Audio is split into 50-second chunks with 2-second overlap
+2. **Inference** - Each chunk is transcribed independently
+3. **Merging** - Transcripts are combined with overlap detection to remove duplicates
+
+```plaintext
+Input audio (100s)
+     ↓
+  Chunks: [0-50s] → "hello world"
+          [48-98s] → "world this is a test"  (2s overlap)
+          [96-100s] → "a test"               (remainder)
+     ↓
+Transcripts merged: "hello world this is a test"
+```
+
+### Configuration
+
+Chunking is configured per model in `model_spec.json`:
+
+```json
+{
+  "chunking": {
+    "enabled": true,
+    "chunk_size_seconds": 50,
+    "overlap_seconds": 2,
+    "strategy": "overlapping"
+  }
+}
+```
+
+### Using It
+
+No code changes required — chunking is **automatic**:
+
+```csharp
+// Short audio (< 60s) → single pass
+var transcript = await asrService.TranscribeAsync(shortAudio);
+
+// Long audio (> 60s) → automatically chunks and merges
+var transcript = await asrService.TranscribeAsync(longAudio);  
+// Returns merged transcript across multiple chunks
+```
+
+### Performance Tips
+
+- **Per-chunk time**: ~150ms (CPU) to seconds (GPU) depending on hardware
+- **30 minutes audio**: ~100-300 seconds total (including overlap overhead)
+- **Memory**: ~80-100MB per chunk (typically stable across many chunks)
+
+### Troubleshooting
+
+| Issue | Cause | Solution |
+| --- | --- | --- |
+| Chunking disabled | Model spec has `"enabled": false` | Update model_spec.json |
+| Duplicate words | Overlap detection failed | Verify overlap > 2s, check logs |
+| Audio too long error | Chunking disabled, audio > 60s | Enable chunking in model spec |
+
+### Testing Long-Form Audio
+
+See `tests/NvidiaVoiceAgent.Core.Tests/Integration/LongFormAudioChunkingTests.cs` for:
+
+- 30-minute audio scenarios
+- Synthetic audio generation (speech, silence, noise, multi-speaker)
+- Edge case handling
+
+Run tests:
+
+```bash
+dotnet test --filter "LongFormAudioChunkingTests"
+```
+
+### Performance Benchmarking
+
+See `tests/NvidiaVoiceAgent.Core.Tests/Performance/AudioChunkingPerformanceTests.cs` for:
+
+- Throughput measurements (seconds/second)
+- Memory usage tracking
+- Consistency testing across multiple runs
+
+Run benchmarks:
+
+```bash
+dotnet test --filter "AudioChunkingPerformanceTests" -- --logger "console;verbosity=detailed"
+```
 
 ## Testing Patterns
 
@@ -263,7 +355,7 @@ This is the default experience on first run if you set `"AutoDownload": false`.
 
 ### File locations
 
-```
+```plaintext
 docs/
 ├── plans/           # Design proposals (plan_YYMMDD_HHMM.md)
 ├── architecture/    # Architecture overview and diagrams

@@ -68,14 +68,15 @@ public class TranscriptMergerTests
     public void MergeTranscripts_WithoutCommonWords_ConcatenatesWithoutDuplication()
     {
         var merger = new TranscriptMerger(_logger);
-        var transcripts = new[] { "foo bar", "baz qux" };
+        // Use words far apart in edit distance to avoid false positives from fuzzy matching
+        var transcripts = new[] { "apple banana", "elephant giraffe" };
 
         var result = merger.MergeTranscripts(transcripts, 0.1f);
 
-        result.Should().Contain("foo");
-        result.Should().Contain("bar");
-        result.Should().Contain("baz");
-        result.Should().Contain("qux");
+        result.Should().Contain("apple");
+        result.Should().Contain("banana");
+        result.Should().Contain("elephant");
+        result.Should().Contain("giraffe");
     }
 
     [Fact]

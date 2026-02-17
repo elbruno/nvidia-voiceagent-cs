@@ -21,6 +21,28 @@ A real-time voice agent built with **ASP.NET Core 10** that performs Speech-to-T
 - **GPU Acceleration** — CUDA with automatic CPU fallback
 - **Voice Personas** — 18 pre-packaged voices with PersonaPlex
 - **Debug Mode** — Record conversations to disk for testing and analysis (NEW ✨)
+- **Long-Form Audio Support** — Automatic chunking for audio longer than 60 seconds (NEW ✨)
+
+## Long-Form Audio Support
+
+The ASR model now supports arbitrarily long audio through intelligent **overlapping chunk processing**:
+
+- ✅ **Automatic chunking** for audio > 60 seconds
+- ✅ **Intelligent overlap** (2s) minimizes word-split artifacts  
+- ✅ **Transparent merging** preserves sentence boundaries & punctuation
+- ✅ **Zero code changes** — works transparently
+
+**Example:** Transcribe a 30-minute podcast in one call:
+
+```csharp
+// Just pass any audio length — chunking happens automatically
+var transcript = await asrService.TranscribeAsync(thirtyMinuteAudio);
+// Result: Full transcription across multiple chunks, no duplicates
+```
+
+**Performance:** ~100-300 seconds for 30-minute real-world audio (varies by CPU/GPU).
+
+📖 See [Audio Chunking Guide](docs/guides/developer-guide.md#audio-chunking-for-long-form-asr) for configuration, troubleshooting, and performance tips.
 
 ## Prerequisites
 
@@ -65,7 +87,7 @@ See `tests/NvidiaVoiceAgent.Core.Tests/README.md` for the full test configuratio
 ## Supported Models
 
 | Model | Type | Size | Status | Notes |
-|-------|------|------|--------|-------|
+| --- | --- | --- | --- | --- |
 | **Parakeet-TDT-0.6B-V2** | ASR | ~2.5 GB | ✅ Auto-download | ONNX format, GPU/CPU |
 | **PersonaPlex-7B-v1** | LLM | ~16.7 GB | ✅ Available | Full-duplex speech AI, 18 voices, requires HF token |
 | **TinyLlama-1.1B** | LLM | ~2.0 GB | 🔜 Coming soon | Fallback LLM option |
@@ -132,7 +154,7 @@ Edit `NvidiaVoiceAgent/appsettings.json`:
 
 ## Project Structure
 
-```
+```plaintext
 nvidia-voiceagent-cs/
 ├── NvidiaVoiceAgent/              # ASP.NET Core Web App (UI, WebSockets, endpoints)
 ├── NvidiaVoiceAgent.Core/         # ML/Audio class library (ASR, AudioProcessor, MelSpectrogram)
@@ -144,7 +166,7 @@ nvidia-voiceagent-cs/
 ## Documentation
 
 | Document | Description |
-|----------|-------------|
+| --- | --- |
 | [Architecture](docs/architecture/overview.md) | Solution structure, project layers, dependency graph |
 | [Implementation Details](docs/guides/implementation-details.md) | Voice pipeline, audio processing, ONNX inference, model loading |
 | [PersonaPlex Integration Plan](docs/plans/plan_260217_0020.md) | Detailed plan for PersonaPlex-7B-v1 implementation |

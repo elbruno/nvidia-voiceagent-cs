@@ -79,13 +79,13 @@ public class AudioProcessor : IAudioProcessor
                     var samples = DecodePcmData(wavData, dataOffset, dataLength, bitsPerSample, numChannels);
 
                     // Log decoded audio info
-                    _logger.LogInformation(\"Decoded WAV: {Samples} samples, {SampleRate}Hz, {Channels} channel(s), {BitsPerSample}-bit\",
+                    _logger.LogInformation("Decoded WAV: {Samples} samples, {SampleRate}Hz, {Channels} channel(s), {BitsPerSample}-bit",
                         samples.Length, sampleRate, numChannels, bitsPerSample);
 
                     // Auto-resample to 16kHz if needed
                     if (sampleRate != 16000)
                     {
-                        _logger.LogInformation(\"Resampling from {SourceRate}Hz to 16000Hz for ASR\", sampleRate);
+                        _logger.LogInformation("Resampling from {SourceRate}Hz to 16000Hz for ASR", sampleRate);
                         samples = Resample(samples, sampleRate, 16000);
                     }
 

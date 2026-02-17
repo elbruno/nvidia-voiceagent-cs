@@ -68,13 +68,15 @@ public class OverlappingAudioChunkerTests
         var chunker = new OverlappingAudioChunker(50f, 2f, _logger);
         const int sampleRate = 16000;
         const float chunkDuration = 50f;
-        var samples = new float[(int)(sampleRate * chunkDuration * 2)];
+        var samples = new float[(int)(sampleRate * chunkDuration * 2)];  // 100 seconds
         for (int i = 0; i < samples.Length; i++)
             samples[i] = 0.5f;
 
         var chunks = chunker.ChunkAudio(samples, sampleRate);
 
-        chunks.Should().HaveCount(2);
+        // 100s with 50s chunks and 2s overlap creates 3 chunks (stride = 48s)
+        // Chunk 0: 0-50s, Chunk 1: 48-98s, Chunk 2: 96-100s
+        chunks.Should().HaveCount(3);
         // Each chunk should have ~50s of audio + 2s overlap
         var expectedChunkSize = (int)(sampleRate * chunkDuration);
         foreach (var chunk in chunks)

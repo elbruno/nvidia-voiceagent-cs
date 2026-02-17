@@ -113,8 +113,8 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
                 _chunker = new OverlappingAudioChunker(
                     chunkingConfig.ChunkSizeSeconds,
                     chunkingConfig.OverlapSeconds,
-                    _logger);
-                _merger = new TranscriptMerger(_logger);
+                    null);
+                _merger = new TranscriptMerger(null);
                 _chunkingEnabled = true;
 
                 _logger.LogInformation(
