@@ -99,6 +99,20 @@ public class ModelDownloadService : IModelDownloadService
             };
         }
 
+        if (!_options.AutoDownload)
+        {
+            _logger.LogWarning(
+                "Model {ModelName} download requested but auto-download is disabled. " +
+                "Download manually from HuggingFace: {RepoId}",
+                model.Name, model.RepoId);
+            return new DownloadResult
+            {
+                Success = false,
+                ModelType = modelType,
+                ErrorMessage = "Auto-download is disabled. Enable AutoDownload in ModelHubOptions or download manually."
+            };
+        }
+
         var localDir = Path.Combine(_options.ModelCachePath, model.LocalDirectory);
 
         try
