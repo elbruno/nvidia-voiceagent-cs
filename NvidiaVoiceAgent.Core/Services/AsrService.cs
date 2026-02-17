@@ -317,7 +317,7 @@ public class AsrService : IAsrService, IDisposable
         foreach (var input in _session.InputMetadata)
         {
             var dims = input.Value.Dimensions.ToArray();
-            _logger.LogInformation("  {Name}: type={Type}, shape=[{Dims}]", 
+            _logger.LogInformation("  {Name}: type={Type}, shape=[{Dims}]",
                 input.Key, input.Value.ElementType.Name, string.Join(", ", dims));
         }
 
@@ -451,7 +451,7 @@ public class AsrService : IAsrService, IDisposable
             if (meta.ElementType == typeof(float))
             {
                 inputs.Add(NamedOnnxValue.CreateFromTensor(name, inputTensor));
-                _logger.LogDebug("Added float input '{Name}' with shape [{Shape}]", 
+                _logger.LogDebug("Added float input '{Name}' with shape [{Shape}]",
                     name, string.Join(", ", inputTensor.Dimensions.ToArray()));
             }
             else if (meta.ElementType == typeof(long))

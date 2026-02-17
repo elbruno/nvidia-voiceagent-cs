@@ -11,20 +11,19 @@ namespace NvidiaVoiceAgent.Core.Tests;
 /// <summary>
 /// Unit tests for ASR service to prevent dimension mismatch errors.
 /// These tests validate that the ASR service correctly processes audio inputs.
+/// Tests are configured via appsettings.Test.json to use the same model paths as the main app.
 /// </summary>
 public class AsrServiceTests
 {
+    private readonly TestConfiguration _config;
     private readonly ILogger<AsrService> _logger;
     private readonly ModelConfig _modelConfig;
 
     public AsrServiceTests()
     {
-        _logger = NullLogger<AsrService>.Instance;
-        _modelConfig = new ModelConfig
-        {
-            AsrModelPath = "Models/parakeet-tdt-0.6b",
-            UseGpu = false // Use CPU for tests
-        };
+        _config = TestConfiguration.Instance;
+        _logger = _config.AsrLogger;
+        _modelConfig = _config.ModelConfig;
     }
 
     #region Mock Mode Tests
@@ -81,36 +80,34 @@ public class AsrServiceTests
     #region Real Model Tests (Integration)
 
     [Fact]
-    public async Task LoadModelAsync_WithValidModel_LoadsSuccessfully()
+    public async Task LoadModelAsync_WithRealParakeetModel_LoadsSuccessfully()
     {
         // Arrange
-        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
-
-        if (!ModelExists())
+        if (!_config.AsrModelExists())
         {
-            // Skip if model not available
+            // Skip if model not available  
             return;
         }
+
+        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
 
         // Act
         await service.LoadModelAsync();
 
         // Assert
-        service.IsModelLoaded.Should().BeTrue();
+        service.IsModelLoaded.Should().BeTrue("Real Parakeet-TDT model should load");
     }
 
     [Fact]
-    public async Task TranscribeAsync_WithValidAudio_DoesNotCrash()
+    public async Task TranscribeAsync_WithRealModel_ProducesValidTranscript()
     {
         // Arrange
-        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
-
-        if (!ModelExists())
+        if (!_config.AsrModelExists())
         {
-            // Skip if model not available
             return;
         }
 
+        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
         await service.LoadModelAsync();
         var audioSamples = GenerateTestAudio(duration: 1.0f);
 
@@ -121,19 +118,22 @@ public class AsrServiceTests
         result.Should().NotBeNull();
         result.Should().NotContain("RuntimeException", "Should not have ONNX runtime errors");
         result.Should().NotContain("BroadcastIterator", "Should not have dimension mismatch errors");
+        result.Should().NotContain("[Transcription error", "Should not have transcription errors");
+
+        // With real model, we expect actual output (not mock or error)
+        result.Length.Should().BeGreaterThan(0, "Real model should produce output");
     }
 
     [Fact]
-    public async Task TranscribeAsync_WithVaryingAudioLengths_HandlesCorrectly()
+    public async Task TranscribeAsync_WithRealModel_HandlesDifferentLengths()
     {
         // Arrange
-        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
-
-        if (!ModelExists())
+        if (!_config.AsrModelExists())
         {
             return;
         }
 
+        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
         await service.LoadModelAsync();
 
         var testDurations = new[] { 0.5f, 1.0f, 2.0f, 3.0f, 5.0f };
@@ -147,20 +147,20 @@ public class AsrServiceTests
             // Assert
             result.Should().NotBeNull($"Duration {duration}s should process");
             result.Should().NotContain("RuntimeException", $"Duration {duration}s should not have runtime errors");
+            result.Should().NotContain("BroadcastIterator", $"Duration {duration}s should not have dimension errors");
         }
     }
 
     [Fact]
-    public async Task TranscribeAsync_WithMultipleCalls_RemainsStable()
+    public async Task TranscribeAsync_WithRealModel_RemainsStableAcrossMultipleCalls()
     {
         // Arrange
-        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
-
-        if (!ModelExists())
+        if (!_config.AsrModelExists())
         {
             return;
         }
 
+        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
         await service.LoadModelAsync();
         var audioSamples = GenerateTestAudio(duration: 1.0f);
 
@@ -170,20 +170,20 @@ public class AsrServiceTests
             var result = await service.TranscribeAsync(audioSamples);
             result.Should().NotBeNull($"Iteration {i} should succeed");
             result.Should().NotContain("RuntimeException", $"Iteration {i} should not crash");
+            result.Should().NotContain("[Transcription error", $"Iteration {i} should not error");
         }
     }
 
     [Fact]
-    public async Task TranscribeAsync_WithEdgeCaseAudioLengths_HandlesCorrectly()
+    public async Task TranscribeAsync_WithRealModel_HandlesEdgeCaseLengths()
     {
         // Arrange
-        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
-
-        if (!ModelExists())
+        if (!_config.AsrModelExists())
         {
             return;
         }
 
+        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
         await service.LoadModelAsync();
 
         // Test edge cases: very short, exact multiples of hop length, etc.
@@ -208,8 +208,10 @@ public class AsrServiceTests
 
             // Assert
             result.Should().NotBeNull($"{sampleCount} samples should process");
-            result.Should().NotContain("BroadcastIterator", 
+            result.Should().NotContain("BroadcastIterator",
                 $"{sampleCount} samples should not have dimension errors");
+            result.Should().NotContain("RuntimeException",
+                $"{sampleCount} samples should not crash");
         }
     }
 
@@ -217,13 +219,12 @@ public class AsrServiceTests
     public async Task TranscribePartialAsync_WithRealModel_ReturnsValidConfidence()
     {
         // Arrange
-        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
-
-        if (!ModelExists())
+        if (!_config.AsrModelExists())
         {
             return;
         }
 
+        var service = new AsrService(_logger, Options.Create(_modelConfig), null);
         await service.LoadModelAsync();
         var audioSamples = GenerateTestAudio(duration: 2.0f);
 
@@ -234,6 +235,7 @@ public class AsrServiceTests
         transcript.Should().NotBeNull();
         confidence.Should().BeInRange(0.0f, 1.0f);
         transcript.Should().NotContain("RuntimeException");
+        transcript.Should().NotContain("[Transcription error");
     }
 
     #endregion
@@ -296,15 +298,6 @@ public class AsrServiceTests
         }
 
         return samples;
-    }
-
-    /// <summary>
-    /// Check if the ASR model file exists.
-    /// </summary>
-    private bool ModelExists()
-    {
-        var modelPath = Path.Combine(_modelConfig.AsrModelPath, "onnx", "encoder.onnx");
-        return File.Exists(modelPath);
     }
 
     #endregion
