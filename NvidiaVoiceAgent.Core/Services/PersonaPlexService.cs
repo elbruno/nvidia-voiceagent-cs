@@ -58,7 +58,7 @@ public class PersonaPlexService : IPersonaPlexService, ILlmService, IDisposable
             _logger.LogInformation("Loading PersonaPlex-7B-v1 model...");
 
             // Try to find the model file
-            string? modelPath = await FindModelPathAsync(cancellationToken);
+            string? modelPath = FindModelPath();
 
             if (modelPath == null)
             {
@@ -210,7 +210,7 @@ public class PersonaPlexService : IPersonaPlexService, ILlmService, IDisposable
     /// <summary>
     /// Find the PersonaPlex model path by checking configured location and ModelHub.
     /// </summary>
-    private async Task<string?> FindModelPathAsync(CancellationToken cancellationToken)
+    private string? FindModelPath()
     {
         // First, check if ModelHub has the model
         if (_modelDownloadService != null)
