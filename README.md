@@ -6,7 +6,7 @@ A real-time voice agent built with **ASP.NET Core 10** that performs Speech-to-T
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
-[![Tests](https://img.shields.io/badge/tests-98%20passed-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
+[![Tests](https://img.shields.io/badge/tests-112%20passed-brightgreen.svg)](https://github.com/elbruno/nvidia-voiceagent-cs)
 
 ## Features
 
@@ -20,6 +20,7 @@ A real-time voice agent built with **ASP.NET Core 10** that performs Speech-to-T
 - **Mock Mode** — Full development workflow without downloading models
 - **GPU Acceleration** — CUDA with automatic CPU fallback
 - **Voice Personas** — 18 pre-packaged voices with PersonaPlex
+- **Debug Mode** — Record conversations to disk for testing and analysis (NEW ✨)
 
 ## Prerequisites
 
@@ -49,7 +50,7 @@ Open **<http://localhost:5003>** in your browser. The app auto-downloads the ASR
 dotnet test
 ```
 
-98 tests across 3 test projects (Web, Core, ModelHub) — all passing.
+112 tests across 3 test projects (Web, Core, ModelHub) — all passing.
 
 ## Supported Models
 
@@ -105,6 +106,14 @@ Edit `NvidiaVoiceAgent/appsettings.json`:
     "UseGpu": true,                 // CUDA acceleration
     "Use4BitQuantization": true,    // LLM quantization
     "PersonaPlexVoice": "voice_0"   // Default PersonaPlex voice (0-17)
+  },
+  "DebugMode": {
+    "Enabled": false,               // Record conversations for testing
+    "AudioLogPath": "logs/audio-debug",
+    "SaveIncomingAudio": true,      // Save user voice
+    "SaveOutgoingAudio": true,      // Save TTS responses
+    "SaveMetadata": true,           // Save conversation metadata
+    "MaxAgeInDays": 7               // Auto-delete old recordings
   }
 }
 ```
@@ -127,6 +136,8 @@ nvidia-voiceagent-cs/
 | [Architecture](docs/architecture/overview.md) | Solution structure, project layers, dependency graph |
 | [Implementation Details](docs/guides/implementation-details.md) | Voice pipeline, audio processing, ONNX inference, model loading |
 | [PersonaPlex Integration Plan](docs/plans/plan_260217_0020.md) | Detailed plan for PersonaPlex-7B-v1 implementation |
+| [Debug Mode Guide](docs/guides/debug-mode.md) | Record conversations for testing and analysis |
+| [E2E Testing with Recorded Audio](docs/guides/e2e-testing-with-recorded-audio.md) | Build automated tests from recorded conversations |
 | [API Reference](docs/api/endpoints.md) | HTTP and WebSocket endpoints with message formats |
 | [Developer Guide](docs/guides/developer-guide.md) | Coding conventions, adding services, testing patterns |
 | [Troubleshooting](docs/guides/troubleshooting.md) | Common issues and solutions |
