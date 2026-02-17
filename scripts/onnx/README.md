@@ -60,7 +60,35 @@ python scripts/onnx/patch_encoder.py
 python scripts/onnx/patch_encoder.py --model-dir E:/models-cache/parakeet-tdt-0.6b/onnx/
 ```
 
-### 3. `verify_encoder.py` — Confirm the fix
+### 3. `patch_decoder.py` — Remove stale decoder output
+
+The decoder export contains a `prednet_lengths` output with no producing node.
+ONNX Runtime rejects the model unless that output is removed.
+
+```bash
+# Dry run (diagnose only)
+python scripts/onnx/patch_decoder.py --dry-run
+
+# Apply patch
+python scripts/onnx/patch_decoder.py
+
+# Patch a model in a different directory
+python scripts/onnx/patch_decoder.py --model-dir E:/models-cache/parakeet-tdt-0.6b/onnx/
+```
+
+### 4. `extract_vocab.py` — Generate vocab.txt
+
+Extracts a SentencePiece vocabulary from a tokenizer model (e.g. `tokenizer.model`).
+
+```bash
+# Default model location
+python scripts/onnx/extract_vocab.py
+
+# Different model directory
+python scripts/onnx/extract_vocab.py --model-dir E:/models-cache/parakeet-tdt-0.6b
+```
+
+### 5. `verify_encoder.py` — Confirm the fix
 
 Runs the encoder with synthetic inputs of varying sizes and (optionally) with a real recorded WAV file to confirm no dimension-mismatch errors.
 

@@ -19,16 +19,16 @@ Browser WAV Audio (Binary WebSocket message)
 3. MelSpectrogramExtractor.Extract()   — 128-mel filterbank spectrogram
     │
     ▼
-4. MelSpectrogramExtractor.Normalize() — Mean/std normalization
+4. MelSpectrogramExtractor.Normalize() — Per-feature normalization
     │
     ▼
-5. AsrService.RunInference()           — ONNX Runtime inference
+5. ParakeetTdtAdapter.RunInference()   — ONNX Runtime inference (encoder + decoder)
     │
     ▼
-6. AsrService.GreedyCtcDecode()        — CTC decoding → text
+6. ParakeetTdtAdapter.GreedyTdtDecode() — TDT decoding → text
     │
     ▼
-7. [Future] LLM → TTS → WAV response
+7. [Optional] LLM → TTS → WAV response
 ```
 
 All stages run in `NvidiaVoiceAgent.Core`. The web app's `VoiceWebSocketHandler` orchestrates the pipeline and sends responses back over WebSocket.
@@ -81,7 +81,7 @@ This handles common conversions like 44100 Hz → 16000 Hz (browser default → 
 | Hop size | 160 samples (10ms at 16kHz) |
 | Sample rate | 16000 Hz |
 | Window function | Hann |
-| Normalization | Mean = -4.0, StdDev = 4.0 |
+| Normalization | Per-feature mean/std (per mel bin) |
 
 > **Note:** The mel bin count is auto-detected from the ONNX model’s input metadata at load time. After loading the ONNX session, `AsrService.ConfigureMelExtractorFromModel()` reads `_session.InputMetadata` to find the expected mel dimension. If the model expects a different count than the extractor’s current setting, a new `MelSpectrogramExtractor` is created with the correct value. This ensures the extractor always matches the model.
 
@@ -92,7 +92,7 @@ This handles common conversions like 44100 Hz → 16000 Hz (browser default → 
 3. **Power Spectrum** — Compute magnitude squared of FFT bins
 4. **Mel Filterbank** — Apply 128 triangular mel-scale filters
 5. **Log Transform** — `log(max(value, 1e-10))` to convert to log-mel scale
-6. **Normalization** — `(logMel - mean) / stdDev` with mean=-4.0, std=4.0
+6. **Normalization** — Per-feature normalization (zero mean, unit variance per mel bin)
 
 The FFT is implemented from scratch (no external DSP library) for zero-dependency operation.
 
@@ -130,20 +130,23 @@ The service logs which execution provider was used. Check logs for `"CUDA execut
 2. **Length tensor**: `[T]` as int64
 3. **Dynamic input binding**: Reads `_session.InputMetadata` to match actual model input names and types
 4. **Run**: `_session.Run(inputs)` → output tensor
-5. **Output decoding**: Handles both logprob outputs (CTC decode) and direct token ID outputs
+5. **Output decoding**: Greedy TDT decode using the decoder ONNX model
 
-### CTC Decoding
+### TDT Decoding
 
-Greedy CTC decoding from log-probability output:
+Greedy Token-and-Duration Transducer decoding (high-level):
 
 ```
-For each time step t:
-    token = argmax(logprobs[t, :])
-    if token != blank AND token != previous_token:
-        append(token)
+Run encoder on mel-spectrogram
+Initialize decoder state, timestep t = 0
+Loop:
+    decoder outputs logits over (vocab + blank + durations)
+    if blank → advance time (t += 1)
+    if token → emit token and advance by predicted duration
+Stop when time exceeds encoded length or safety limit reached
 ```
 
-Token IDs are mapped to text using a vocabulary file (`vocab.txt`) if available. Supports SentencePiece (`▁` → space) and WordPiece (`##` → continuation) tokenization.
+Token IDs are mapped to text using `vocab.txt`. SentencePiece word boundaries (`▁`) are converted to spaces.
 
 ### Mock Mode
 

@@ -23,6 +23,11 @@ dotnet run
 dotnet test
 ```
 
+## Model Preparation
+
+For a standardized, repeatable model setup (including ONNX patches and vocab generation),
+see the guide: `docs/guides/model-preparation.md`.
+
 ## Coding Conventions
 
 ### One Class Per File
