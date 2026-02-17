@@ -198,4 +198,142 @@ public class ModelRegistryTests
         model!.AdditionalFiles.Should().Contain("voices.tgz");
         model!.AdditionalFiles.Should().HaveCount(3);
     }
+
+    [Fact]
+    public void GetModel_Asr_IsAvailableForDownload()
+    {
+        // Arrange
+        var registry = new ModelRegistry(CreateOptions());
+
+        // Act
+        var model = registry.GetModel(ModelType.Asr);
+
+        // Assert
+        model.Should().NotBeNull();
+        model!.IsAvailableForDownload.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GetModel_Tts_IsAvailableForDownload()
+    {
+        // Arrange
+        var registry = new ModelRegistry(CreateOptions());
+
+        // Act
+        var model = registry.GetModel(ModelType.Tts);
+
+        // Assert
+        model.Should().NotBeNull();
+        model!.IsAvailableForDownload.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GetModel_Vocoder_IsAvailableForDownload()
+    {
+        // Arrange
+        var registry = new ModelRegistry(CreateOptions());
+
+        // Act
+        var model = registry.GetModel(ModelType.Vocoder);
+
+        // Assert
+        model.Should().NotBeNull();
+        model!.IsAvailableForDownload.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GetModel_Llm_IsAvailableForDownload()
+    {
+        // Arrange
+        var registry = new ModelRegistry(CreateOptions());
+
+        // Act
+        var model = registry.GetModel(ModelType.Llm);
+
+        // Assert
+        model.Should().NotBeNull();
+        model!.IsAvailableForDownload.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GetModel_PersonaPlex_IsAvailableForDownload()
+    {
+        // Arrange
+        var registry = new ModelRegistry(CreateOptions());
+
+        // Act
+        var model = registry.GetModel(ModelType.PersonaPlex);
+
+        // Assert
+        model.Should().NotBeNull();
+        model!.IsAvailableForDownload.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GetAllModels_AllModelsAreAvailableForDownload()
+    {
+        // Arrange
+        var registry = new ModelRegistry(CreateOptions());
+
+        // Act
+        var models = registry.GetAllModels();
+
+        // Assert
+        models.Should().NotBeEmpty();
+        models.Should().OnlyContain(m => m.IsAvailableForDownload);
+    }
+
+    [Fact]
+    public void GetModel_Tts_HasExpectedRepositoryAndMetadata()
+    {
+        // Arrange
+        var registry = new ModelRegistry(CreateOptions());
+
+        // Act
+        var model = registry.GetModel(ModelType.Tts);
+
+        // Assert
+        model.Should().NotBeNull();
+        model!.Name.Should().Be("FastPitch-HiFiGAN-EN");
+        model!.RepoId.Should().Be("nvidia/tts_en_fastpitch");
+        model!.Filename.Should().Be("model.onnx");
+        model!.LocalDirectory.Should().Be("fastpitch-en");
+        model!.IsRequired.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetModel_Vocoder_HasExpectedRepositoryAndMetadata()
+    {
+        // Arrange
+        var registry = new ModelRegistry(CreateOptions());
+
+        // Act
+        var model = registry.GetModel(ModelType.Vocoder);
+
+        // Assert
+        model.Should().NotBeNull();
+        model!.Name.Should().Be("HiFiGAN-EN");
+        model!.RepoId.Should().Be("nvidia/tts_hifigan");
+        model!.Filename.Should().Be("model.onnx");
+        model!.LocalDirectory.Should().Be("hifigan-en");
+        model!.IsRequired.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetModel_Llm_HasExpectedRepositoryAndMetadata()
+    {
+        // Arrange
+        var registry = new ModelRegistry(CreateOptions());
+
+        // Act
+        var model = registry.GetModel(ModelType.Llm);
+
+        // Assert
+        model.Should().NotBeNull();
+        model!.Name.Should().Be("TinyLlama-1.1B-ONNX");
+        model!.RepoId.Should().Be("TinyLlama/TinyLlama-1.1B-Chat-v1.0");
+        model!.Filename.Should().Be("model.onnx");
+        model!.LocalDirectory.Should().Be("tinyllama-1.1b");
+        model!.IsRequired.Should().BeFalse();
+    }
 }
