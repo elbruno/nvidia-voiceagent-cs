@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="NvidiaVoiceAgent.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- ML/AI Model Inference -->
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.20.1" />

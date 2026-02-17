@@ -159,7 +159,7 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
             throw new InvalidOperationException("Model not loaded. Call LoadAsync first.");
         }
 
-        return await Task.Run(() => RunInference(melSpectrogram), cancellationToken);
+        return await Task.Run(() => RunInference(melSpectrogram, audioSampleCount: null), cancellationToken);
     }
 
     public async Task<string> TranscribeAsync(float[] audioSamples, CancellationToken cancellationToken = default)
@@ -179,7 +179,7 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
 
         // Standard path: process as single chunk
         var melSpec = PrepareInput(audioSamples);
-        return await InferAsync(melSpec, cancellationToken);
+        return await Task.Run(() => RunInference(melSpec, audioSamples.Length), cancellationToken);
     }
 
     /// <summary>
@@ -206,7 +206,7 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
         {
             // Single chunk: process normally (should not happen in this code path)
             var melSpec = PrepareInput(chunks[0].Samples);
-            return await InferAsync(melSpec, cancellationToken);
+            return await Task.Run(() => RunInference(melSpec, chunks[0].Samples.Length), cancellationToken);
         }
 
         // Process each chunk
@@ -224,7 +224,7 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
                     i + 1, chunks.Length, chunk.Samples.Length);
 
                 var melSpec = PrepareInput(chunk.Samples);
-                transcripts[i] = await InferAsync(melSpec, cancellationToken);
+                transcripts[i] = await Task.Run(() => RunInference(melSpec, chunk.Samples.Length), cancellationToken);
 
                 _logger.LogDebug("Chunk {Index} transcript: '{Transcript}' ({Length} chars)",
                     i + 1, transcripts[i], transcripts[i]?.Length ?? 0);
@@ -265,7 +265,7 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
         return _specification ?? throw new InvalidOperationException("Model not loaded");
     }
 
-    private string RunInference(float[,] melSpectrogram)
+    private string RunInference(float[,] melSpectrogram, int? audioSampleCount)
     {
         int numFrames = melSpectrogram.GetLength(0);
         int numMels = melSpectrogram.GetLength(1);
@@ -327,14 +327,17 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
 
         var inputTensor = new DenseTensor<float>(inputData, new[] { 1, numMels, paddedFrames });
 
-        // IMPORTANT: Use paddedFrames as length, not numFrames
-        // The model expects length parameter to match the actual tensor time dimension
-        long lengthValue = _specification.InputRequirements.LengthParameter?.Value switch
+        long lengthValue = CalculateLengthParameter(audioSampleCount, numFrames);
+
+        // Guard: length should always be much larger than paddedFrames.
+        // If they're close, it means sample count was not passed correctly (regression).
+        if (lengthValue <= paddedFrames && audioSampleCount.HasValue)
         {
-            "padded_frame_count" => paddedFrames,
-            "frame_count" => paddedFrames,  // Use padded frames (tensor actually contains padded data)
-            _ => paddedFrames
-        };
+            _logger.LogError(
+                "Length parameter ({Length}) is <= padded frames ({Padded}). " +
+                "This will cause dimension mismatch. Expected raw audio sample count (e.g., 16000+).",
+                lengthValue, paddedFrames);
+        }
 
         _logger.LogInformation(
             "Running ASR inference: input_shape=[1, {MelBins}, {TimeFrames}], length_param={Length}, sample_count={Samples}",
@@ -446,6 +449,27 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
             .Trim();
 
         return text;
+    }
+
+    /// <summary>
+    /// Calculate the length parameter value for the ONNX model.
+    /// The Parakeet-TDT model expects the raw audio sample count, NOT the mel frame count.
+    /// Passing mel frames causes dimension mismatch errors in self-attention layers.
+    /// </summary>
+    /// <param name="audioSampleCount">Original audio sample count (preferred)</param>
+    /// <param name="melFrameCount">Mel spectrogram frame count (fallback)</param>
+    /// <returns>Length parameter value to pass to the ONNX model</returns>
+    internal long CalculateLengthParameter(int? audioSampleCount, int melFrameCount)
+    {
+        if (audioSampleCount.HasValue)
+        {
+            return audioSampleCount.Value;
+        }
+
+        // Fallback: estimate sample count from mel frames
+        // This is approximate but much better than passing mel frame count directly
+        int hopLength = _specification?.AudioPreprocessing.HopLength ?? 160;
+        return (long)melFrameCount * hopLength;
     }
 
     private float EstimateConfidence(float[] audioSamples)
