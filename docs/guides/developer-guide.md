@@ -19,7 +19,7 @@ cd NvidiaVoiceAgent
 dotnet run
 # → http://localhost:5003
 
-# Run all tests (69 tests across 3 projects)
+# Run all tests
 dotnet test
 ```
 
@@ -235,6 +235,18 @@ dotnet test tests/NvidiaVoiceAgent.Core.Tests
 # By test name
 dotnet test --filter "DecodeWav_WithValidWav_ExtractsSamples"
 ```
+
+### Test Configuration (Real Models)
+
+Core tests use configuration-based model loading that mirrors the main app. Settings live in `tests/NvidiaVoiceAgent.Core.Tests/appsettings.Test.json` and are copied to the test output directory.
+
+Key points:
+
+- **Real-model tests are optional** — they skip when models are not downloaded.
+- **Paths are relative to the solution root** (same as the app).
+- **CPU default** for tests (`UseGpu: false`) to keep runs stable.
+
+For details, see `tests/NvidiaVoiceAgent.Core.Tests/README.md`.
 
 ## Mock Mode Development
 

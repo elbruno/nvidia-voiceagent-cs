@@ -50,7 +50,17 @@ Open **<http://localhost:5003>** in your browser. The app auto-downloads the ASR
 dotnet test
 ```
 
-112 tests across 3 test projects (Web, Core, ModelHub) — all passing.
+Tests are configuration-driven. Core tests read `tests/NvidiaVoiceAgent.Core.Tests/appsettings.Test.json` (mirrors the main app) and **skip real-model tests** when models are not available.
+
+### Useful filters
+
+```bash
+dotnet test --filter "FullyQualifiedName~MockMode"
+dotnet test --filter "FullyQualifiedName~RealModel"
+dotnet test --filter "FullyQualifiedName~RealModelIntegrationTests"
+```
+
+See `tests/NvidiaVoiceAgent.Core.Tests/README.md` for the full test configuration guide.
 
 ## Supported Models
 
@@ -77,6 +87,7 @@ To use PersonaPlex:
 1. **Accept the license** at <https://huggingface.co/nvidia/personaplex-7b-v1>
 2. **Generate a HuggingFace token** with read access
 3. **Add token** to `appsettings.json`:
+
    ```json
    {
      "ModelHub": {
@@ -84,6 +95,7 @@ To use PersonaPlex:
      }
    }
    ```
+
 4. **Download** via the UI or API: `POST /api/models/PersonaPlex-7B-v1/download`
 
 📖 **Detailed Setup Guide**: See [HuggingFace Token Setup Guide](docs/guides/huggingface-token-setup.md) for complete instructions, troubleshooting, and security best practices.
