@@ -92,7 +92,8 @@ public class ModelsController : ControllerBase
             });
         }
 
-        var requiresAuth = modelToDownload.Type == ModelType.PersonaPlex;
+        var requiresAuth = modelToDownload.Type == ModelType.PersonaPlex ||
+                   modelToDownload.RepoId.StartsWith("nvidia/", StringComparison.OrdinalIgnoreCase);
         if (requiresAuth && string.IsNullOrWhiteSpace(_options.HuggingFaceToken))
         {
             return BadRequest(new

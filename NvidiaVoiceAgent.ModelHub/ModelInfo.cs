@@ -46,6 +46,22 @@ public class ModelInfo
     public string[] AdditionalFiles { get; init; } = [];
 
     /// <summary>
+    /// Alternate filenames to try if the primary filename is unavailable.
+    /// </summary>
+    public string[] AlternateFilenames { get; init; } = [];
+
+    /// <summary>
+    /// Optional list of file suffixes or exact filenames to include when
+    /// scanning a repository for downloadable files.
+    /// </summary>
+    public string[] RepoFileIncludes { get; init; } = [];
+
+    /// <summary>
+    /// Whether to scan the repository file list when primary files are missing.
+    /// </summary>
+    public bool AllowRepoScan { get; init; }
+
+    /// <summary>
     /// Whether the model's HuggingFace repo and files are available for download.
     /// Set to false for placeholder/future models whose ONNX exports don't exist yet.
     /// </summary>

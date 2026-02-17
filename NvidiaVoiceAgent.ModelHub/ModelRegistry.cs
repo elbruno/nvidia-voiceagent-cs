@@ -37,6 +37,9 @@ public class ModelRegistry : IModelRegistry
                 LocalDirectory = "fastpitch-en",
                 IsRequired = false,
                 AdditionalFiles = [],
+                AlternateFilenames = ["tts_en_fastpitch.nemo", "fastpitch.nemo"],
+                RepoFileIncludes = [".onnx", ".onnx_data", ".nemo"],
+                AllowRepoScan = true,
                 IsAvailableForDownload = true
             },
             new ModelInfo
@@ -49,6 +52,9 @@ public class ModelRegistry : IModelRegistry
                 LocalDirectory = "hifigan-en",
                 IsRequired = false,
                 AdditionalFiles = [],
+                AlternateFilenames = ["tts_hifigan.nemo", "hifigan.nemo"],
+                RepoFileIncludes = [".onnx", ".onnx_data", ".nemo"],
+                AllowRepoScan = true,
                 IsAvailableForDownload = true
             },
             new ModelInfo
@@ -61,6 +67,19 @@ public class ModelRegistry : IModelRegistry
                 LocalDirectory = "tinyllama-1.1b",
                 IsRequired = false,
                 AdditionalFiles = [],
+                AlternateFilenames = ["model.safetensors"],
+                RepoFileIncludes = [
+                    ".onnx",
+                    ".onnx_data",
+                    ".safetensors",
+                    "config.json",
+                    "generation_config.json",
+                    "tokenizer.json",
+                    "tokenizer.model",
+                    "tokenizer_config.json",
+                    "special_tokens_map.json"
+                ],
+                AllowRepoScan = true,
                 IsAvailableForDownload = true
             },
             new ModelInfo

@@ -1,3 +1,6 @@
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text.Json;
 using HuggingfaceHub;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -10,6 +13,7 @@ namespace NvidiaVoiceAgent.ModelHub;
 /// </summary>
 public class ModelDownloadService : IModelDownloadService
 {
+    private static readonly HttpClient HttpClient = new();
     private readonly ILogger<ModelDownloadService> _logger;
     private readonly IModelRegistry _registry;
     private readonly IProgressReporter _progressReporter;
@@ -136,36 +140,11 @@ public class ModelDownloadService : IModelDownloadService
                 }
             });
 
-            // Download main model file with progress reporting
-            var modelPath = await HFDownloader.DownloadFileAsync(
-                model.RepoId,
-                model.Filename,
-                localDir: localDir,
-                token: _options.HuggingFaceToken,
-                progress: progress);
+            // Download primary model file(s) with progress reporting
+            var (modelPath, _) = await DownloadPrimaryFilesAsync(model, localDir, progress, cancellationToken);
 
-            // Download additional files
-            var failedAdditionalFiles = new List<string>();
-            foreach (var additionalFile in model.AdditionalFiles)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                try
-                {
-                    await HFDownloader.DownloadFileAsync(
-                        model.RepoId,
-                        additionalFile,
-                        localDir: localDir,
-                        token: _options.HuggingFaceToken);
-
-                    _logger.LogDebug("Downloaded additional file: {File}", additionalFile);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to download additional file {File}. Continuing...", additionalFile);
-                    failedAdditionalFiles.Add(additionalFile);
-                }
-            }
+            // Ensure additional files are present (if any)
+            var failedAdditionalFiles = await DownloadAdditionalFilesAsync(model, localDir, cancellationToken);
 
             if (failedAdditionalFiles.Count > 0)
             {
@@ -205,6 +184,216 @@ public class ModelDownloadService : IModelDownloadService
         }
     }
 
+    private async Task<(string modelPath, bool usedRepoScan)> DownloadPrimaryFilesAsync(
+        ModelInfo model,
+        string localDir,
+        IProgress<int> progress,
+        CancellationToken cancellationToken)
+    {
+        var candidates = GetPrimaryCandidates(model);
+        Exception? lastError = null;
+
+        foreach (var candidate in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var modelPath = await HFDownloader.DownloadFileAsync(
+                    model.RepoId,
+                    candidate,
+                    localDir: localDir,
+                    token: _options.HuggingFaceToken,
+                    progress: progress);
+
+                _logger.LogInformation("Downloaded primary model file: {File}", candidate);
+                return (modelPath, false);
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+                _logger.LogWarning(ex, "Failed to download primary file {File}.", candidate);
+            }
+        }
+
+        if (model.AllowRepoScan && model.RepoFileIncludes.Length > 0)
+        {
+            var filesDownloaded = await DownloadRepoFilesAsync(model, localDir, cancellationToken);
+            if (filesDownloaded > 0)
+            {
+                return (localDir, true);
+            }
+        }
+
+        if (lastError != null)
+        {
+            throw lastError;
+        }
+
+        throw new InvalidOperationException($"No downloadable files found for {model.Name}.");
+    }
+
+    private async Task<List<string>> DownloadAdditionalFilesAsync(
+        ModelInfo model,
+        string localDir,
+        CancellationToken cancellationToken)
+    {
+        var failedAdditionalFiles = new List<string>();
+
+        foreach (var additionalFile in model.AdditionalFiles)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                await HFDownloader.DownloadFileAsync(
+                    model.RepoId,
+                    additionalFile,
+                    localDir: localDir,
+                    token: _options.HuggingFaceToken);
+
+                _logger.LogDebug("Downloaded additional file: {File}", additionalFile);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to download additional file {File}. Continuing...", additionalFile);
+                failedAdditionalFiles.Add(additionalFile);
+            }
+        }
+
+        return failedAdditionalFiles;
+    }
+
+    private static IReadOnlyList<string> GetPrimaryCandidates(ModelInfo model)
+    {
+        var candidates = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(model.Filename))
+        {
+            candidates.Add(model.Filename);
+        }
+
+        if (model.AlternateFilenames.Length > 0)
+        {
+            candidates.AddRange(model.AlternateFilenames);
+        }
+
+        return candidates;
+    }
+
+    private async Task<int> DownloadRepoFilesAsync(ModelInfo model, string localDir, CancellationToken cancellationToken)
+    {
+        var repoFiles = await GetRepoFileListAsync(model.RepoId, cancellationToken);
+        var includes = model.RepoFileIncludes;
+
+        var filesToDownload = repoFiles
+            .Where(file => MatchesInclude(file, includes))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (filesToDownload.Count == 0)
+        {
+            _logger.LogWarning("No files matched repo include patterns for {ModelName}.", model.Name);
+            return 0;
+        }
+
+        _logger.LogInformation(
+            "Repo scan for {ModelName} matched {Count} file(s).",
+            model.Name,
+            filesToDownload.Count);
+
+        var downloadedCount = 0;
+        foreach (var file in filesToDownload)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                await HFDownloader.DownloadFileAsync(
+                    model.RepoId,
+                    file,
+                    localDir: localDir,
+                    token: _options.HuggingFaceToken);
+
+                downloadedCount++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to download repo file {File}.", file);
+            }
+        }
+
+        return downloadedCount;
+    }
+
+    private async Task<IReadOnlyList<string>> GetRepoFileListAsync(string repoId, CancellationToken cancellationToken)
+    {
+        var url = $"https://huggingface.co/api/models/{repoId}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+
+        if (!string.IsNullOrWhiteSpace(_options.HuggingFaceToken))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.HuggingFaceToken);
+        }
+
+        using var response = await HttpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+
+        if (!document.RootElement.TryGetProperty("siblings", out var siblings) ||
+            siblings.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<string>();
+        }
+
+        var files = new List<string>();
+        foreach (var sibling in siblings.EnumerateArray())
+        {
+            if (sibling.TryGetProperty("rfilename", out var filenameElement))
+            {
+                var filename = filenameElement.GetString();
+                if (!string.IsNullOrWhiteSpace(filename))
+                {
+                    files.Add(filename);
+                }
+            }
+        }
+
+        return files;
+    }
+
+    private static bool MatchesInclude(string filename, string[] includes)
+    {
+        if (includes.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var include in includes)
+        {
+            if (string.IsNullOrWhiteSpace(include))
+            {
+                continue;
+            }
+
+            if (include.StartsWith(".", StringComparison.Ordinal))
+            {
+                if (filename.EndsWith(include, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            else if (filename.EndsWith(include, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Delete an existing file in the local directory to avoid IOException
     /// from HuggingfaceHub's ChmodAndReplace on Windows.
@@ -229,16 +418,34 @@ public class ModelDownloadService : IModelDownloadService
 
         // Check if the specific model file exists
         var mainFilePath = Path.Combine(localDir, model.Filename);
-        if (File.Exists(mainFilePath))
+        if (!string.IsNullOrWhiteSpace(model.Filename) && File.Exists(mainFilePath))
         {
             // Return the directory path, not the file path
             // This allows services to locate related files
             return localDir;
         }
 
+        foreach (var alternate in model.AlternateFilenames)
+        {
+            var alternatePath = Path.Combine(localDir, alternate);
+            if (File.Exists(alternatePath))
+            {
+                return localDir;
+            }
+        }
+
         // Search for common model file extensions in the local directory
         if (Directory.Exists(localDir))
         {
+            foreach (var include in model.RepoFileIncludes)
+            {
+                var match = FindMatchingFile(localDir, include);
+                if (match != null)
+                {
+                    return Path.GetDirectoryName(match);
+                }
+            }
+
             // Search for ONNX models
             var onnxFiles = Directory.GetFiles(localDir, "*.onnx", SearchOption.AllDirectories);
             if (onnxFiles.Length > 0)
@@ -281,6 +488,26 @@ public class ModelDownloadService : IModelDownloadService
         }
 
         return true;
+    }
+
+    private static string? FindMatchingFile(string localDir, string include)
+    {
+        if (string.IsNullOrWhiteSpace(include))
+        {
+            return null;
+        }
+
+        if (include.StartsWith(".", StringComparison.Ordinal))
+        {
+            var matches = Directory.GetFiles(localDir, "*" + include, SearchOption.AllDirectories);
+            return matches.FirstOrDefault();
+        }
+
+        var explicitMatches = Directory.GetFiles(localDir, "*", SearchOption.AllDirectories)
+            .Where(file => file.EndsWith(include, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return explicitMatches.FirstOrDefault();
     }
 
     /// <inheritdoc />
