@@ -60,13 +60,36 @@ public class AudioProcessor : IAudioProcessor
                     numChannels = BinaryPrimitives.ReadInt16LittleEndian(wavData.AsSpan(offset + 10, 2));
                     sampleRate = BinaryPrimitives.ReadInt32LittleEndian(wavData.AsSpan(offset + 12, 4));
                     bitsPerSample = BinaryPrimitives.ReadInt16LittleEndian(wavData.AsSpan(offset + 22, 2));
+
+                    // Validate audio format
+                    if (audioFormat != 1)
+                    {
+                        _logger.LogWarning("Unsupported audio format: {Format} (only PCM supported)", audioFormat);
+                    }
+                    if (numChannels < 1 || numChannels > 2)
+                    {
+                        _logger.LogWarning("Unsupported channel count: {Channels} (mono/stereo supported only)", numChannels);
+                    }
                 }
                 else if (chunkId == "data")
                 {
                     // Extract audio data
                     var dataOffset = offset + 8;
                     var dataLength = Math.Min(chunkSize, wavData.Length - dataOffset);
-                    return DecodePcmData(wavData, dataOffset, dataLength, bitsPerSample, numChannels);
+                    var samples = DecodePcmData(wavData, dataOffset, dataLength, bitsPerSample, numChannels);
+
+                    // Log decoded audio info
+                    _logger.LogInformation(\"Decoded WAV: {Samples} samples, {SampleRate}Hz, {Channels} channel(s), {BitsPerSample}-bit\",
+                        samples.Length, sampleRate, numChannels, bitsPerSample);
+
+                    // Auto-resample to 16kHz if needed
+                    if (sampleRate != 16000)
+                    {
+                        _logger.LogInformation(\"Resampling from {SourceRate}Hz to 16000Hz for ASR\", sampleRate);
+                        samples = Resample(samples, sampleRate, 16000);
+                    }
+
+                    return samples;
                 }
 
                 offset += 8 + chunkSize;

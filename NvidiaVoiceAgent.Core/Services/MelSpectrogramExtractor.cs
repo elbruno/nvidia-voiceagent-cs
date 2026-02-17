@@ -68,6 +68,13 @@ public class MelSpectrogramExtractor
             return new float[0, _nMels];
         }
 
+        // Validate audio length has at least one complete frame
+        if (audioSamples.Length < _winLength)
+        {
+            // Return minimal spectrogram rather than throwing
+            return new float[0, _nMels];
+        }
+
         // Calculate number of frames
         int numFrames = Math.Max(1, (audioSamples.Length - _winLength) / _hopLength + 1);
         var melSpectrogram = new float[numFrames, _nMels];

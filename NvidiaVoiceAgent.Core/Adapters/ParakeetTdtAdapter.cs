@@ -173,7 +173,24 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
 
         if (numFrames == 0)
         {
+            _logger.LogWarning("Empty mel-spectrogram: no audio frames extracted");
             return string.Empty;
+        }
+
+        // Validate audio length
+        const int minFrames = 5;      // ~50ms minimum
+        const int maxFrames = 6000;   // ~60 second maximum
+        if (numFrames < minFrames)
+        {
+            _logger.LogWarning("Audio too short: {Frames} frames (minimum {Min}). Duration: {Duration:F2}ms",
+                numFrames, minFrames, numFrames * 10);  // 10ms per frame
+            return "[Audio too short for transcription]";
+        }
+        if (numFrames > maxFrames)
+        {
+            _logger.LogWarning("Audio too long: {Frames} frames (maximum {Max}). Duration: {Duration:F2}s",
+                numFrames, maxFrames, numFrames * 0.01);  // 10ms per frame
+            return "[Audio too long for transcription]";
         }
 
         // Apply padding according to specification
@@ -184,8 +201,11 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
         {
             int multiple = paddingConfig.Value;
             paddedFrames = ((numFrames + multiple - 1) / multiple) * multiple;
-            _logger.LogDebug("Padding frames from {Original} to {Padded} (multiple of {Multiple})",
-                numFrames, paddedFrames, multiple);
+            if (paddedFrames != numFrames)
+            {
+                _logger.LogDebug("Padding frames from {Original} to {Padded} (multiple of {Multiple})",
+                    numFrames, paddedFrames, multiple);
+            }
         }
 
         // Create input tensor [batch=1, mel_bins, time] with padding
@@ -207,16 +227,18 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
 
         var inputTensor = new DenseTensor<float>(inputData, new[] { 1, numMels, paddedFrames });
 
-        // Determine length parameter value based on specification
+        // IMPORTANT: Use paddedFrames as length, not numFrames
+        // The model expects length parameter to match the actual tensor time dimension
         long lengthValue = _specification.InputRequirements.LengthParameter?.Value switch
         {
             "padded_frame_count" => paddedFrames,
-            "frame_count" => numFrames,
+            "frame_count" => paddedFrames,  // Use padded frames (tensor actually contains padded data)
             _ => paddedFrames
         };
 
-        _logger.LogDebug("Running inference: input=[1, {Mels}, {Frames}], length={Length}",
-            numMels, paddedFrames, lengthValue);
+        _logger.LogInformation(
+            "Running ASR inference: input_shape=[1, {MelBins}, {TimeFrames}], length_param={Length}, sample_count={Samples}",
+            numMels, paddedFrames, lengthValue, (int)(numFrames * 160));
 
         // Create inputs
         var inputs = new List<NamedOnnxValue>
