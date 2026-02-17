@@ -28,6 +28,18 @@ This guide standardizes the **one-time model setup** required to run the NVIDIA 
 - **Required**: Parakeet-TDT (ASR)
 - **Optional**: PersonaPlex, FastPitch, HiFiGAN, TinyLlama
 
+  If you prefer a script, run:
+
+  ```powershell
+  .\scripts\onnx\download-models.ps1 -BaseUrl http://localhost:5003 -IncludeOptional
+  ```
+
+  To include PersonaPlex (requires HF token + license acceptance):
+
+  ```powershell
+  .\scripts\onnx\download-models.ps1 -BaseUrl http://localhost:5003 -IncludeOptional -IncludePersonaPlex
+  ```
+
 1. **Install Python helpers (one time)**
 
   ```bash
