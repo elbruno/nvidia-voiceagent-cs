@@ -41,7 +41,7 @@ public class ParakeetAdapterTests
 
         var spec = adapter.GetSpecification();
         spec.Should().NotBeNull();
-        spec.ModelType.Should().Be("asr_encoder_ctc");
+        spec.ModelType.Should().Be("asr_encoder_tdt");
     }
 
     [Fact]

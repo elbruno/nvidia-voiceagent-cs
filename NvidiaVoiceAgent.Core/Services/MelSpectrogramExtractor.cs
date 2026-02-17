@@ -125,23 +125,45 @@ public class MelSpectrogramExtractor
     }
 
     /// <summary>
-    /// Normalize mel spectrogram using global mean/std (approximate values for speech).
+    /// Normalize mel spectrogram using per-feature (per-mel-bin) normalization.
+    /// Each mel bin is independently normalized to zero mean and unit variance
+    /// across the time dimension, matching NeMo's "per_feature" normalization.
     /// </summary>
     public float[,] Normalize(float[,] melSpectrogram)
     {
         int numFrames = melSpectrogram.GetLength(0);
         int numMels = melSpectrogram.GetLength(1);
 
-        // Approximate mean/std for log-mel spectrograms of speech
-        const float meanValue = -4.0f;
-        const float stdValue = 4.0f;
+        if (numFrames == 0)
+        {
+            return new float[numFrames, numMels];
+        }
 
         var normalized = new float[numFrames, numMels];
-        for (int t = 0; t < numFrames; t++)
+
+        for (int m = 0; m < numMels; m++)
         {
-            for (int m = 0; m < numMels; m++)
+            // Compute mean for this mel bin
+            float sum = 0;
+            for (int t = 0; t < numFrames; t++)
             {
-                normalized[t, m] = (melSpectrogram[t, m] - meanValue) / stdValue;
+                sum += melSpectrogram[t, m];
+            }
+            float mean = sum / numFrames;
+
+            // Compute std for this mel bin
+            float sumSq = 0;
+            for (int t = 0; t < numFrames; t++)
+            {
+                float diff = melSpectrogram[t, m] - mean;
+                sumSq += diff * diff;
+            }
+            float std = MathF.Sqrt(sumSq / numFrames) + 1e-5f;
+
+            // Normalize
+            for (int t = 0; t < numFrames; t++)
+            {
+                normalized[t, m] = (melSpectrogram[t, m] - mean) / std;
             }
         }
 

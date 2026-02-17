@@ -9,7 +9,8 @@ namespace NvidiaVoiceAgent.Core.Adapters;
 
 /// <summary>
 /// Model adapter for NVIDIA Parakeet-TDT ASR models.
-/// Handles Parakeet-specific preprocessing, padding, CTC decoding, and optional audio chunking.
+/// Handles Parakeet-specific preprocessing, padding, and TDT greedy decoding
+/// using both encoder and decoder ONNX models.
 /// </summary>
 public class ParakeetTdtAdapter : IAsrModelAdapter
 {
@@ -17,7 +18,8 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
     private readonly SemaphoreSlim _loadLock = new(1, 1);
 
     private AsrModelSpecification? _specification;
-    private InferenceSession? _session;
+    private InferenceSession? _encoderSession;
+    private InferenceSession? _decoderSession;
     private MelSpectrogramExtractor? _melExtractor;
     private string[]? _vocabulary;
     private IAudioChunkingStrategy? _chunker;
@@ -85,10 +87,29 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
             }
 
             var sessionOptions = CreateSessionOptions();
-            _session = new InferenceSession(encoderPath, sessionOptions);
+            _encoderSession = new InferenceSession(encoderPath, sessionOptions);
 
-            _logger.LogInformation("ONNX session created using {Provider}",
+            _logger.LogInformation("Encoder ONNX session created using {Provider}",
                 _cudaAvailable ? "CUDA (GPU)" : "CPU");
+
+            // Load decoder ONNX model (for TDT decoding)
+            var decoderFile = _specification.Files.AdditionalFiles?.ContainsKey("decoder") == true
+                ? _specification.Files.AdditionalFiles["decoder"]?.ToString()
+                : null;
+            if (!string.IsNullOrEmpty(decoderFile))
+            {
+                var decoderPath = Path.Combine(modelPath, decoderFile);
+                if (File.Exists(decoderPath))
+                {
+                    var decoderOptions = CreateSessionOptions();
+                    _decoderSession = new InferenceSession(decoderPath, decoderOptions);
+                    _logger.LogInformation("Decoder ONNX session created: {Path}", decoderPath);
+                }
+                else
+                {
+                    _logger.LogWarning("Decoder model not found: {Path}. TDT decoding unavailable.", decoderPath);
+                }
+            }
 
             // Load vocabulary
             var vocabFile = _specification.Decoding.VocabularyFile;
@@ -154,7 +175,7 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
 
     public async Task<string> InferAsync(float[,] melSpectrogram, CancellationToken cancellationToken = default)
     {
-        if (_session == null || _specification == null)
+        if (_encoderSession == null || _specification == null)
         {
             throw new InvalidOperationException("Model not loaded. Call LoadAsync first.");
         }
@@ -282,14 +303,14 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
         if (numFrames < minFrames)
         {
             _logger.LogWarning("Audio too short: {Frames} frames (minimum {Min}). Duration: {Duration:F2}ms",
-                numFrames, minFrames, numFrames * 10);  // 10ms per frame
+                numFrames, minFrames, numFrames * 10);
             return "[Audio too short for transcription]";
         }
         if (numFrames > maxFrames)
         {
             string chunkingMsg = _chunkingEnabled ? " Enable chunking in model configuration or reduce audio length." : "";
             _logger.LogWarning("Audio too long: {Frames} frames (maximum {Max}). Duration: {Duration:F2}s.{ChunkingMsg}",
-                numFrames, maxFrames, numFrames * 0.01, chunkingMsg);  // 10ms per frame
+                numFrames, maxFrames, numFrames * 0.01, chunkingMsg);
             return $"[Audio too long for transcription (max {maxFrames} frames).{chunkingMsg}]";
         }
 
@@ -326,16 +347,13 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
         }
 
         var inputTensor = new DenseTensor<float>(inputData, new[] { 1, numMels, paddedFrames });
-
-        // The length parameter should match the padded mel frame count
-        // (i.e. the time dimension of the input tensor).
         long lengthValue = paddedFrames;
 
         _logger.LogInformation(
             "Running ASR inference: input_shape=[1, {MelBins}, {TimeFrames}], length_param={Length}",
             numMels, paddedFrames, lengthValue);
 
-        // Create inputs
+        // Create encoder inputs
         var inputs = new List<NamedOnnxValue>
         {
             NamedOnnxValue.CreateFromTensor("audio_signal", inputTensor),
@@ -343,79 +361,184 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
                 new DenseTensor<long>(new long[] { lengthValue }, new[] { 1 }))
         };
 
-        // Run inference
-        using var results = _session!.Run(inputs);
+        // Run encoder
+        using var encoderResults = _encoderSession!.Run(inputs);
 
-        // Decode output
-        return DecodeOutput(results);
-    }
-
-    private string DecodeOutput(IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results)
-    {
-        var output = results.First();
-
-        if (output.Value is not Tensor<float> logprobs)
+        // Get encoder output tensor
+        var encoderOutput = encoderResults.First();
+        if (encoderOutput.Value is not Tensor<float> encHidden)
         {
-            _logger.LogWarning("Unexpected output type: {Type}", output.Value?.GetType().Name ?? "null");
-            return "[Unknown output format]";
+            _logger.LogWarning("Unexpected encoder output type: {Type}", encoderOutput.Value?.GetType().Name ?? "null");
+            return "[Unknown encoder output format]";
         }
 
-        return GreedyCtcDecode(logprobs);
-    }
-
-    private string GreedyCtcDecode(Tensor<float> logprobs)
-    {
-        var dims = logprobs.Dimensions.ToArray();
-
-        // Typical shape: [batch, time, vocab] or [time, vocab]
-        int timeSteps, vocabSize;
-
-        if (dims.Length == 3)
+        // Get encoded lengths
+        var encodedLengthsOutput = encoderResults.ElementAt(1);
+        int encodedTimeSteps;
+        if (encodedLengthsOutput.Value is Tensor<long> encLengths)
         {
-            timeSteps = dims[1];
-            vocabSize = dims[2];
-        }
-        else if (dims.Length == 2)
-        {
-            timeSteps = dims[0];
-            vocabSize = dims[1];
+            encodedTimeSteps = (int)encLengths[0];
         }
         else
         {
-            _logger.LogWarning("Unexpected logprobs shape: [{Dims}]", string.Join(", ", dims));
-            return "[Decode error]";
+            // Fall back to shape-based calculation
+            encodedTimeSteps = encHidden.Dimensions[2];
         }
 
-        var tokens = new List<int>();
-        int prevToken = -1;
-        int blankToken = _specification!.Decoding.BlankTokenId;
+        _logger.LogDebug("Encoder output: [{Dims}], encoded_time={EncTime}",
+            string.Join(", ", encHidden.Dimensions.ToArray()), encodedTimeSteps);
 
-        for (int t = 0; t < timeSteps; t++)
+        // Route to appropriate decoder
+        if (_decoderSession != null && _specification.Decoding.Type == "tdt")
         {
-            // Find argmax for this timestep
-            float maxVal = float.MinValue;
-            int maxIdx = 0;
+            return GreedyTdtDecode(encHidden, encodedTimeSteps);
+        }
 
-            for (int v = 0; v < vocabSize; v++)
+        _logger.LogWarning("No TDT decoder available, falling back to raw output decode");
+        return "[Decoder not available for TDT model]";
+    }
+
+    /// <summary>
+    /// Greedy TDT (Token-and-Duration Transducer) decoding using the decoder ONNX model.
+    /// </summary>
+    private string GreedyTdtDecode(Tensor<float> encoderOutputs, int encodedTimeSteps)
+    {
+        var decoding = _specification!.Decoding;
+        int blankId = decoding.BlankTokenId;  // 1024
+        int[] tdtDurations = decoding.TdtDurations ?? [0, 1, 2, 3, 4];
+        int numLayers = decoding.PrednetNumLayers;  // 2
+        int hiddenSize = decoding.PrednetHiddenSize;  // 640
+        int totalClasses = blankId + 1 + tdtDurations.Length;  // 1030
+
+        // Create encoder output tensor for decoder input (reuse the encoder output as-is)
+        var encDims = encoderOutputs.Dimensions.ToArray();
+        var encData = new float[encDims[0] * encDims[1] * encDims[2]];
+        for (int bi = 0; bi < encDims[0]; bi++)
+            for (int di = 0; di < encDims[1]; di++)
+                for (int ti = 0; ti < encDims[2]; ti++)
+                    encData[bi * encDims[1] * encDims[2] + di * encDims[2] + ti] = encoderOutputs[bi, di, ti];
+        var encTensor = new DenseTensor<float>(encData, encDims);
+
+        // Initialize LSTM states to zeros
+        var lstmH = new DenseTensor<float>(new float[numLayers * 1 * hiddenSize], new[] { numLayers, 1, hiddenSize });
+        var lstmC = new DenseTensor<float>(new float[numLayers * 1 * hiddenSize], new[] { numLayers, 1, hiddenSize });
+
+        var decodedTokens = new List<int>();
+        int t = 0;
+        int lastLabel = blankId;
+        int maxIterations = encodedTimeSteps * 10;  // Safety limit
+        int iterations = 0;
+
+        while (t < encodedTimeSteps && iterations < maxIterations)
+        {
+            iterations++;
+
+            // Create targets tensor [batch=1, seq_len=1]
+            var targets = new DenseTensor<int>(new int[] { lastLabel }, new[] { 1, 1 });
+
+            // Run decoder
+            var decoderInputs = new List<NamedOnnxValue>
             {
-                float val = dims.Length == 3 ? logprobs[0, t, v] : logprobs[t, v];
+                NamedOnnxValue.CreateFromTensor("encoder_outputs", encTensor),
+                NamedOnnxValue.CreateFromTensor("targets", targets),
+                NamedOnnxValue.CreateFromTensor("input_states_1", lstmH),
+                NamedOnnxValue.CreateFromTensor("input_states_2", lstmC)
+            };
 
-                if (val > maxVal)
+            using var decoderResults = _decoderSession!.Run(decoderInputs);
+
+            // Get joint output: [batch, enc_time, target_time, num_classes]
+            var jointOutput = decoderResults.First();
+            if (jointOutput.Value is not Tensor<float> jointLogits)
+            {
+                _logger.LogWarning("Unexpected decoder output type");
+                break;
+            }
+
+            // Update LSTM states for next iteration
+            // Outputs: [0]=outputs, [1]=output_states_1, [2]=output_states_2
+            var newH = decoderResults.ElementAt(1);
+            var newC = decoderResults.ElementAt(2);
+            if (newH.Value is Tensor<float> newHStates)
+            {
+                lstmH = CopyTensor(newHStates);
+            }
+            if (newC.Value is Tensor<float> newCStates)
+            {
+                lstmC = CopyTensor(newCStates);
+            }
+
+            // Get logits at current encoder time step: jointLogits[0, t, 0, :]
+            // Token/blank logits are at indices [0..blankId]
+            float maxTokenVal = float.MinValue;
+            int maxTokenIdx = blankId;  // Default to blank
+
+            for (int k = 0; k <= blankId; k++)
+            {
+                float val = jointLogits[0, t, 0, k];
+                if (val > maxTokenVal)
                 {
-                    maxVal = val;
-                    maxIdx = v;
+                    maxTokenVal = val;
+                    maxTokenIdx = k;
                 }
             }
 
-            // CTC: skip blanks and repeated tokens
-            if (maxIdx != blankToken && maxIdx != prevToken)
+            if (maxTokenIdx == blankId)
             {
-                tokens.Add(maxIdx);
+                // Blank: advance time by 1
+                t++;
             }
-            prevToken = maxIdx;
+            else
+            {
+                // Token emitted
+                decodedTokens.Add(maxTokenIdx);
+                lastLabel = maxTokenIdx;
+
+                // Get duration from duration logits [blankId+1 .. totalClasses-1]
+                int durOffset = blankId + 1;
+                float maxDurVal = float.MinValue;
+                int maxDurIdx = 0;
+
+                for (int d = 0; d < tdtDurations.Length; d++)
+                {
+                    float val = jointLogits[0, t, 0, durOffset + d];
+                    if (val > maxDurVal)
+                    {
+                        maxDurVal = val;
+                        maxDurIdx = d;
+                    }
+                }
+
+                int duration = tdtDurations[maxDurIdx];
+                t += Math.Max(1, duration);
+            }
         }
 
-        return DecodeTokenIds(tokens.Select(t => (long)t).ToArray());
+        if (iterations >= maxIterations)
+        {
+            _logger.LogWarning("TDT decoding hit safety limit ({MaxIter} iterations)", maxIterations);
+        }
+
+        _logger.LogDebug("TDT decoded {TokenCount} tokens in {Iterations} iterations",
+            decodedTokens.Count, iterations);
+
+        return DecodeTokenIds(decodedTokens.Select(id => (long)id).ToArray());
+    }
+
+    private static DenseTensor<float> CopyTensor(Tensor<float> source)
+    {
+        var dims = source.Dimensions.ToArray();
+        var totalSize = 1;
+        foreach (var d in dims) totalSize *= d;
+        var data = new float[totalSize];
+
+        int idx = 0;
+        foreach (var val in source)
+        {
+            data[idx++] = val;
+        }
+
+        return new DenseTensor<float>(data, dims);
     }
 
     private string DecodeTokenIds(long[] tokenIds)
@@ -498,7 +621,8 @@ public class ParakeetTdtAdapter : IAsrModelAdapter
     {
         if (_disposed) return;
 
-        _session?.Dispose();
+        _encoderSession?.Dispose();
+        _decoderSession?.Dispose();
         _loadLock?.Dispose();
         (_chunker as IDisposable)?.Dispose();
         (_merger as IDisposable)?.Dispose();
