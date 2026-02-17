@@ -293,6 +293,126 @@ else if (numFrames > maxFrames)
 
 ---
 
+### Phase 6: Validation & Deployment (3 hours)
+
+**Objective:** Validate implementation with real-world scenarios, measure performance, and prepare for production deployment.
+
+**Files Modified:**
+
+- `docs/guides/developer-guide.md` (update with chunking guidance)
+- `appsettings.Development.json` (enable chunking)
+- `README.md` (document long-form audio support)
+
+**Tasks:**
+
+#### 6.1 Integration Testing with Long-Form Audio (1 hour)
+
+- **Create test suite:** Generate or record 30-minute+ continuous audio samples
+  - Silent portions (silence robustness)
+  - Music + speech (channel separation)
+  - Multiple speakers (context switching)
+  - Different accents & speech rates
+
+- **Test scenarios:**
+  - 30-minute continuous podcast
+  - 10-minute meeting with overlapping speech
+  - Technical lecture with pauses
+  - Edge case: exactly 60s, 120s, 150s (chunk boundary aligned)
+
+- **Validation:**
+  - ✅ Transcription accuracy comparable to single-pass (within 5% error rate)
+  - ✅ No text duplicates in overlap regions
+  - ✅ Proper sentence boundaries preserved
+  - ✅ No dropped words at chunk transitions
+
+**Acceptance Criteria:**
+
+- All real-world test cases pass
+- Chunked transcript matches single-pass (baseline) ±5%
+- Zero data loss or duplication artifacts
+
+#### 6.2 Performance Profiling (1 hour)
+
+- **Benchmark scenarios:**
+  - 10-minute audio (typical use case)
+  - 60-minute audio (stress test)
+  - Memory usage tracking per chunk
+
+- **Metrics to measure:**
+  - Total inference time vs. audio duration (should be ~linear)
+  - Per-chunk overhead (ideally < 10ms)
+  - Peak memory usage (GPU + CPU)
+  - Chunk processing time variance
+
+- **Profiling tools:**
+  - Stopwatch around chunk inference loop
+  - GC.GetTotalMemory() before/after each chunk
+  - ONNX Runtime profiling (optional)
+
+- **Performance targets:**
+  - 10-min audio: < 5 seconds total (realistic: 15-20s depending on CPU/GPU)
+  - Memory overhead: < 100MB per chunk (typically 50-80MB)
+  - Linear scaling: doubling audio ≈ doubles inference time
+
+**Acceptance Criteria:**
+
+- Performance benchmarks completed and logged
+- No memory leaks (memory stable across many chunks)
+- Performance acceptable for intended use case
+
+#### 6.3 Enable in Model Specification (30 minutes)
+
+- **Update Parakeet model spec** (`models/parakeet-tdt-0.6b/model_spec.json`):
+
+  ```json
+  {
+    "chunking": {
+      "enabled": true,
+      "chunk_size_seconds": 50,
+      "overlap_seconds": 2,
+      "strategy": "overlapping"
+    }
+  }
+  ```
+
+- **Verify configuration loading:**
+  - ✅ Model spec deserializes correctly
+  - ✅ Chunking config is recognized
+  - ✅ Adapter initializes with chunker + merger
+  - ✅ Health endpoint reports chunking capability
+
+**Acceptance Criteria:**
+
+- Model spec valid JSON
+- Chunking enabled in production model config
+- Health check confirms chunking is active
+
+#### 6.4 Documentation & UI Updates (30 minutes)
+
+- **Update developer guide:**
+  - Explain when chunking is triggered
+  - Document configuration options
+  - Show chunking behavior in logs
+  - Troubleshooting: chunking disabled, performance tips
+
+- **Update UI (if applicable):**
+  - Show progress across chunks (e.g., "2/3 chunks processed")
+  - Display chunk boundaries in transcript viewer
+  - Optional: show overlap detection highlights
+
+- **Update README:**
+  - Add "Long-Form Audio Support" section
+  - Link to new documentation
+  - Performance expectations
+
+**Acceptance Criteria:**
+
+- Documentation is clear and complete
+- Examples provided for common scenarios
+- Users understand chunking trade-offs
+
+---
+
 ## Success Metrics
 
 | Metric | Target | How to Measure |
@@ -370,7 +490,8 @@ NvidiaVoiceAgent.Core.Tests/
 | Phase 3: Merger | 3h | Day 2 | Day 2 |
 | Phase 4: Integration | 2h | Day 2 | Day 3 |
 | Phase 5: Testing & Config | 2h | Day 3 | Day 3 |
-| **Total** | **12h** | | |
+| Phase 6: Validation & Deployment | 3h | Day 3 | Day 4 |
+| **Total** | **14h** | | |
 
 ---
 
