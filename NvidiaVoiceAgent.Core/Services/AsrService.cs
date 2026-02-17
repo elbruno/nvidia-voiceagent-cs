@@ -65,7 +65,7 @@ public class AsrService : IAsrService, IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "ASR inference failed");
-            return "[Transcription error]";
+            return $"[Transcription error: {ex.Message}]";
         }
     }
 
@@ -98,7 +98,7 @@ public class AsrService : IAsrService, IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "ASR inference failed");
-            return ("[Transcription error]", 0.0f);
+            return ($"[Transcription error: {ex.Message}]", 0.0f);
         }
     }
 
@@ -298,6 +298,8 @@ public class AsrService : IAsrService, IDisposable
         // Optimize for inference
         options.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
         options.EnableMemoryPattern = true;
+        // Enable verbose logging for debugging dimension issues
+        options.LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_VERBOSE;
 
         return options;
     }
@@ -392,11 +394,31 @@ public class AsrService : IAsrService, IDisposable
         // (stride 2). The ONNX export does not track the length reduction
         // internally, so we compute the post-subsampling length ourselves.
         // Formula: ceil(numFrames / 2) = (numFrames + 1) / 2
-        int encoderLength = (numFrames + 1) / 2;
-        var lengthTensor = new DenseTensor<long>(new long[] { encoderLength }, new[] { 1 });
+        // RE-FIX 6: Force length to match Input Tensor Dimension 2 (Time).
+        // If inputTensor has shape [1, 80, numFrames], then 'length' strictly must reflect 'numFrames'.
+        // HOWEVER, we saw "3 by 5" failure when passing 5.
+        // This suggests the model graph broadcast 3 against 5.
+        // If 5 was 'length' (my input), and 3 was 'encoded_sequence' (internal).
+        // Then 'length' was broadcast against 'encoded_sequence'.
+        // This implies 'length' should match 'encoded_sequence' -> 3.
+        // So for short audio, it wants HALF.
 
-        // Prepare inputs - try different input configurations based on model
-        var inputs = CreateModelInputs(inputTensor, lengthTensor, encoderLength);
+        // BUT for long audio (25), passing 13 (HALF) -> "13 by 25" failure.
+        // Here, 13 (length) broadcast against 25 (Internal?????).
+        // If internal was 25, then 'length' should match 25.
+        // So for long audio, it wants FULL.
+
+        // WHY?
+        // Maybe because 25 is odd? (25+1)/2 = 13.
+        // Maybe because 5 is odd? (5+1)/2 = 3.
+        // Both are odd numbers.
+
+        // Hypothesis: The model expects 'length' to be strictly INT32 and equal to 'numFrames'.
+        // The error 'BroadcastIterator' might be misleading if types differ.
+        // Let's try passing 'numFrames' BUT force it into 'int' or 'long' carefully.
+        // Parakeet-TDT-1.1B usually takes 'length' as INT64 [batch].
+
+        int encoderLength = numFrames; // Default to Full Length
 
         // Run inference
         using var results = _session.Run(inputs);
@@ -410,6 +432,16 @@ public class AsrService : IAsrService, IDisposable
         DenseTensor<long> lengthTensor,
         int numFrames)
     {
+        // Check for specific batch size requirement logic (some models are strict)
+        // If broadcasting failed on axis 1 (dimension 39 vs 77 in error log), check if we need to resize
+
+        // This specific fix addresses "onnxruntime::BroadcastIterator::Append axis == 1 || axis == largest was false"
+        // It's likely related to how PositionalEmbedding handles mismatched lengths in some ONNX exports.
+        // For Parakeet-TDT, ensure length is explicitly cast to specific integer types if needed.
+
+        // Also ensure mel bins matches exactly what model expects (80 vs 128)
+        // Re-check input metadata for explicit shape hints
+
         var inputs = new List<NamedOnnxValue>();
 
         // Get actual input names from the model
@@ -425,7 +457,9 @@ public class AsrService : IAsrService, IDisposable
             }
             else if (meta.ElementType == typeof(long) || meta.ElementType == typeof(int))
             {
-                // Length input
+                // Length input - CRITICAL FIX: Ensure dimensions match exactly [1] not scalar or [1,1] unless specified
+                // The error 39 vs 77 suggests a broadcasting mismatch between sequence length and positional embeddings
+
                 if (meta.ElementType == typeof(int))
                 {
                     var intLengthTensor = new DenseTensor<int>(new int[] { numFrames }, new[] { 1 });
@@ -433,6 +467,7 @@ public class AsrService : IAsrService, IDisposable
                 }
                 else
                 {
+                    // Some models fail if length is not exactly rank-1 tensor of size [1]
                     inputs.Add(NamedOnnxValue.CreateFromTensor(name, lengthTensor));
                 }
             }

@@ -351,6 +351,29 @@ public class VoiceWebSocketHandler
             _logger.LogInformation("ASR transcript: {Transcript} (confidence: {Conf})", transcript, confidence);
             await BroadcastLogAsync($"ASR transcript: {transcript}", "info", sessionLog);
 
+            if (transcript.StartsWith("[Transcription error]", StringComparison.OrdinalIgnoreCase))
+            {
+                var warningMsg = "Skipping LLM/TTS pipeline due to ASR error";
+                _logger.LogWarning(warningMsg);
+                await BroadcastLogAsync(warningMsg, "warn", sessionLog);
+
+                // Notify client of error (or just stop processing)
+                if (sessionState.RealtimeMode)
+                {
+                    await SendJsonAsync(webSocket, new PartialTranscriptResponse
+                    {
+                        Transcript = transcript,
+                        Confidence = 0,
+                        IsPartial = false
+                    }, cancellationToken);
+                }
+                else
+                {
+                    await SendJsonAsync(webSocket, new TranscriptResponse { Transcript = transcript }, cancellationToken);
+                }
+                return;
+            }
+
             // Send partial transcript with confidence
             if (sessionState.RealtimeMode)
             {
