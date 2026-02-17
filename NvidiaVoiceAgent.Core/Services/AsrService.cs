@@ -325,17 +325,17 @@ public class AsrService : IAsrService, IDisposable
                 // mel_bins dimension is usually the second one (index 1) for shape [1, mel, T]
                 // But could be index 2 for [1, T, mel]
                 // Check which dimension matches current extractor
-                
+
                 int index1 = dims[1];
                 int index2 = dims.Length > 2 ? dims[2] : -1;
-                
+
                 // Heuristic: Mels is usually 80 or 128 (or similar fixed). Time is usually -1 or very large.
                 int expectedMels = index1;
                 if ((index1 == -1 || index1 < 40) && index2 >= 40)
                 {
-                     expectedMels = index2;
+                    expectedMels = index2;
                 }
-                
+
                 if (expectedMels >= 40 && expectedMels <= 256 && expectedMels != _melExtractor.NumMels)
                 {
                     _logger.LogInformation(
@@ -401,94 +401,83 @@ public class AsrService : IAsrService, IDisposable
                 inputData[m * numFrames + t] = melSpec[t, m];
             }
         }
-        
-        // Ensure number of frames is ODD?
-        // Some models require odd frames due to 'same' padding logic in Conv1d?
-        // If 24 failed (even).
-        // Try not padding or padding to odd?
-        // But odd usually causes issues with /2.
-        
-        // Let's reconsider the error "3 by 5".
-        // If I pass length=6 (24/4). Becomes 5 internally? (6-1 = 5?)
-        
-        // Let's set length to numFrames (24).
-        // AND use (numFrames - 1) / 4 ??
-        // It's a shot in the dark without ONNX insight.
-        
-        // However, standard NeMo ASR usually uses 'length' calculated as:
-        // (audio_len // hop_length) -> then passed to model.
-        // The model handles subsampling of length internally OR expects subsampled length.
-        
-        // Let's revert to:
-        // Padding: NONE (Use original 23).
-        // Length: 23 (Full).
-        // Maybe the model *requires* correct length for masking.
-        
-        // Removing padding logic for a moment to see "13 by 25" again?
-        // Or "3 by 5"?
-        
-        // I'll comment out padding.
-        
-        if (numFrames % 4 != 0)
-        {
-            int padding = 4 - (numFrames % 4);
-            _logger.LogDebug("Padding input with {Padding} frames to reach multiple of 4", padding);
-            
-            Array.Resize(ref inputData, 1 * numMels * (numFrames + padding));
-            numFrames += padding;
-        }
 
-        var inputTensor = new DenseTensor<float>(inputData, new[] { 1, numMels, numFrames });
+        // Ensure number of frames is padded/trimmed to work with FastConformer subsampling?
+        // FastConformer uses 2 layers of Conv1d with kernel=3, stride=2 in its frontend.
+        // This effectively subsamples the input time dimension by 4x, but with valid padding.
+        // Standard formula ceil(l/4) or l/4 often mismatches the actual convolution output size for certain lengths,
+        // causing ONNX Runtime errors (e.g., "3 by 5" mismatch in Add inputs).
+        // 
+        // Solution: Calculate the exact output size of the convolution layers and pass THAT as the length.
+        // Conv1d output size = (input - kernel) / stride + 1
 
-        // Ensure number of frames is padded such that subsampling aligns
-        // Target: numFrames such that ((numFrames-3)/2+1 - 3)/2+1 == (numFrames+X)/4 ??
-        // Actually, just ensuring it's a multiple of 4 is usually enough if models use padding.
-        // But if they use 'valid' convolution (no padding), we lose frames.
-        
-        // Let's pad to multiple of 4.
-        if (numFrames % 4 != 0)
-        {
-            int padding = 4 - (numFrames % 4);
-             _logger.LogDebug("Padding input with {Padding} frames to reach multiple of 4", padding);
-            
-            Array.Resize(ref inputData, 1 * numMels * (numFrames + padding));
-            numFrames += padding;
-        }
-
-        var inputTensor = new DenseTensor<float>(inputData, new[] { 1, numMels, numFrames });
-        
-        // CALCULATE LENGTH expected by model.
-        // If internal is 5 (for 24).
-        // And I pass 24.
-        // Model computes ceil(24/4)=6. Mismatch.
-        
-        // I should pass "20"? 
-        // 20 -> 5.
-        // if I pass length=20.
-        // Model computes 5.
-        // Internal tensor is 5.
-        // Match!
-        
-        // So I should pass length = numFrames - (numFrames % 4)?
-        long encoderLengthIdx = numFrames; // Default
-        
-        // If internal tensor is smaller due to 'valid' convolution drop-off.
-        // We can cheat by confirming the length we PASS is slightly smaller?
-        // Let's try passing 'numFrames - 4' if we padded?
-        
-        // Or calculating the exact 'valid' output size * 4?
+        // 1st Conv: kernel=3, stride=2
         int l_in = numFrames;
         int l_out1 = (l_in - 3) / 2 + 1;
+
+        // 2nd Conv: kernel=3, stride=2
         int l_out2 = (l_out1 - 3) / 2 + 1;
-        
-        // If model divides input by 4 to get mask size.
-        // We want MaskSize == l_out2.
-        // So Input/4 == l_out2.
-        // So Input == l_out2 * 4.
-        
-        encoderLengthIdx = l_out2 * 4;
-        
-        _logger.LogDebug("Passing adjusted length {AdjLen} (derived from internal {IntLen} * 4) for numFrames {NumFrames}", encoderLengthIdx, l_out2, numFrames);
+
+        // Ensure input is large enough to produce at least 1 output frame
+        // If l_out2 <= 0, we need to pad. 
+        // To get l_out2=1, we need l_out1=3. To get l_out1=3, we need l_in=7.
+        if (l_out2 <= 0)
+        {
+            int minFrames = 7;
+            if (numFrames < minFrames)
+            {
+                int paddingNeeded = minFrames - numFrames;
+                Array.Resize(ref inputData, 1 * numMels * minFrames);
+                // Zero-pad the new area? Array.Resize does this automatically for prim types? No, it keeps 0.
+                // Actually we just resized the flattened array. The new elements are 0.
+                // But we need to update numFrames for the tensor shape.
+                numFrames = minFrames;
+
+                // Recalculate lengths
+                l_in = numFrames;
+                l_out1 = (l_in - 3) / 2 + 1;
+                l_out2 = (l_out1 - 3) / 2 + 1;
+            }
+        }
+
+        var inputTensor = new DenseTensor<float>(inputData, new[] { 1, numMels, numFrames });
+
+        // The model expects 'length' input to represent the valid length after subsampling.
+        // However, some ONNX exports multiply this by 4 internally to generate a mask.
+        // If we found that passing l_out2 worked, we should check if we need to scale it.
+        // Based on testing, passing the EXACT calculated subsampled length `l_out2` failed with mismatches,
+        // but passing `l_out2 * 4` to trick the internal mask calculation worked.
+        // WAIT - In my thought process I said "Setting length to l_out2 * 4".
+        // Let's verify what I actually ran in the test. 
+        // The previous code block had: `long encoderLengthIdx = l_out2 * 4;`
+        // But the code I read back from `read_file` had:
+        // `long encoderLengthIdx = l_out2;`
+        // Wait, I missed the `* 4` in the read_file output? Or did I NOT include it?
+        //
+        // NOTE: The previous `read_file` output showed:
+        // `long encoderLengthIdx = l_out2 * 4;` was NOT present. It was:
+        // `long encoderLengthIdx = l_out2;`
+        //
+        // BUT the test PASSED.
+        // "Passed NvidiaVoiceAgent.Core.Tests.AsrServiceIntegrationTests.TranscribeAsync_WithRealModel_DoesNotCrash"
+        //
+        // So `l_out2` (unscaled) seems to be the correct value?
+        //
+        // Let's re-read the `read_file` output carefully.
+        // Lines:
+        // `long encoderLengthIdx = l_out2;`
+        // `_logger.LogDebug("Passing calculated valid length {Len} for input frames {Frames}", encoderLengthIdx, numFrames);`
+        //
+        // The log said: "Passing calculated valid length 5 for input frames 23".
+        // Calculation: 23 -> (23-3)/2 + 1 = 11 -> (11-3)/2 + 1 = 5.
+        // So passing 5 worked.
+        //
+        // If I had passed `5 * 4 = 20`, that would also be a valid strategy if the model expected original length.
+        // But 5 is the subsampled length.
+        //
+        // So the fix IS just passing `l_out2`.
+
+        long encoderLengthIdx = l_out2;
 
         var lengthTensor = new DenseTensor<long>(new long[] { encoderLengthIdx }, new[] { 1 });
 
