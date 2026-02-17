@@ -40,6 +40,9 @@ builder.Services.AddSingleton<LogsWebSocketHandler>();
 // TODO: Register TTS service when implementation is ready
 // builder.Services.AddSingleton<ITtsService, TtsService>();
 
+// Add controllers for API endpoints
+builder.Services.AddControllers();
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -63,79 +66,18 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// Health check endpoint
+// Map API controllers
+app.MapControllers();
+
+// Legacy health endpoint (for backward compatibility with old scripts/tests)
 app.MapGet("/health", (IAsrService asrService, ILlmService? llmService, IModelDownloadService modelDownload) => new HealthStatus
 {
     Status = "healthy",
     AsrLoaded = asrService.IsModelLoaded,
     AsrDownloaded = modelDownload.IsModelAvailable(ModelType.Asr),
-    TtsLoaded = false,  // TODO: Check actual service status
+    TtsLoaded = false,
     LlmLoaded = llmService?.IsModelLoaded ?? false,
     Timestamp = DateTime.UtcNow
-});
-
-// Models status endpoint - returns detailed info for each registered model
-app.MapGet("/api/models", (IModelRegistry registry, IModelDownloadService modelDownload) =>
-{
-    var models = registry.GetAllModels();
-    var results = models.Select(m =>
-    {
-        var isAvailable = modelDownload.IsModelAvailable(m.Type);
-        var localPath = modelDownload.GetModelPath(m.Type);
-        return new ModelStatusResponse
-        {
-            Name = m.Name,
-            Type = m.Type.ToString(),
-            Status = isAvailable ? "downloaded" : "not_downloaded",
-            RepoId = m.RepoId,
-            LocalPath = localPath != null ? Path.GetFullPath(localPath) : null,
-            ExpectedSizeMb = m.ExpectedSizeBytes / (1024.0 * 1024.0),
-            IsRequired = m.IsRequired,
-            IsAvailableForDownload = m.IsAvailableForDownload
-        };
-    }).ToList();
-    return results;
-});
-
-// Trigger download for a specific model by name
-app.MapPost("/api/models/{name}/download", async (string name, IModelRegistry registry, IModelDownloadService modelDownload) =>
-{
-    var allModels = registry.GetAllModels();
-    var model = allModels.FirstOrDefault(m => m.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-    if (model == null)
-    {
-        return Results.NotFound(new { error = $"Model '{name}' not found." });
-    }
-
-    if (!model.IsAvailableForDownload)
-    {
-        return Results.Json(new { error = $"Model '{name}' is not yet available for download (coming soon)." }, statusCode: 400);
-    }
-
-    var result = await modelDownload.DownloadModelAsync(model.Type);
-    if (result.Success)
-    {
-        return Results.Ok(new { message = $"Model '{name}' downloaded successfully.", path = result.ModelPath });
-    }
-    return Results.Json(new { error = result.ErrorMessage }, statusCode: 500);
-});
-
-// Delete a specific model and all its related files
-app.MapDelete("/api/models/{name}", (string name, IModelRegistry registry, IModelDownloadService modelDownload) =>
-{
-    var allModels = registry.GetAllModels();
-    var model = allModels.FirstOrDefault(m => m.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-    if (model == null)
-    {
-        return Results.NotFound(new { error = $"Model '{name}' not found." });
-    }
-
-    var deleted = modelDownload.DeleteModel(model.Type);
-    if (deleted)
-    {
-        return Results.Ok(new { message = $"Model '{name}' deleted successfully." });
-    }
-    return Results.Ok(new { message = $"Model '{name}' was not found on disk." });
 });
 
 // WebSocket endpoint for voice processing

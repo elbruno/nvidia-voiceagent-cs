@@ -73,9 +73,9 @@ PersonaPlex-7B-v1 is NVIDIA's state-of-the-art full-duplex speech-to-speech conv
 
 To use PersonaPlex:
 
-1. Accept the license at <https://huggingface.co/nvidia/personaplex-7b-v1>
-2. Generate a HuggingFace token with read access
-3. Add token to `appsettings.json`:
+1. **Accept the license** at <https://huggingface.co/nvidia/personaplex-7b-v1>
+2. **Generate a HuggingFace token** with read access
+3. **Add token** to `appsettings.json`:
    ```json
    {
      "ModelHub": {
@@ -83,7 +83,9 @@ To use PersonaPlex:
      }
    }
    ```
-4. Download via the UI or API: `POST /api/models/PersonaPlex-7B-v1/download`
+4. **Download** via the UI or API: `POST /api/models/PersonaPlex-7B-v1/download`
+
+📖 **Detailed Setup Guide**: See [HuggingFace Token Setup Guide](docs/guides/huggingface-token-setup.md) for complete instructions, troubleshooting, and security best practices.
 
 **Note**: PersonaPlex currently runs in mock mode. TorchSharp integration for actual inference is planned.
 

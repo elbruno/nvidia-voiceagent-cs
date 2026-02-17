@@ -44,4 +44,9 @@ public class ModelStatusResponse
     /// Whether this model is available for download.
     /// </summary>
     public bool IsAvailableForDownload { get; set; }
+
+    /// <summary>
+    /// Whether this model requires HuggingFace authentication (for gated models).
+    /// </summary>
+    public bool RequiresAuthentication { get; set; }
 }
