@@ -274,6 +274,18 @@ dotnet run
 # Swagger UI available at /swagger
 ```
 
+### User Secrets (Development)
+
+Use User Secrets for per-developer values like `ModelHub:HuggingFaceToken` and `ModelHub:ModelCachePath`:
+
+```bash
+cd NvidiaVoiceAgent
+dotnet user-secrets init
+dotnet user-secrets set "ModelHub:HuggingFaceToken" "hf_your_actual_token_here"
+dotnet user-secrets set "ModelHub:ModelCachePath" "models-cache"
+dotnet user-secrets list
+```
+
 ### Production
 
 ```bash
@@ -293,7 +305,15 @@ export ModelConfig__AsrModelPath="/opt/models/parakeet"
 # Override ModelHub settings
 export ModelHub__AutoDownload=false
 export ModelHub__ModelCachePath="/opt/model-cache"
+export ModelHub__HuggingFaceToken="hf_your_token_here"
 
 # Override logging
 export Logging__LogLevel__Default=Debug
+```
+
+**Windows (PowerShell):**
+
+```powershell
+$env:ModelHub__ModelCachePath="E:\\models-cache"
+$env:ModelHub__HuggingFaceToken="hf_your_token_here"
 ```

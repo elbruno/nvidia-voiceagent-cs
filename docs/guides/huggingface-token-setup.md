@@ -3,6 +3,7 @@
 ## Overview
 
 NVIDIA's PersonaPlex-7B-v1 is a gated model on HuggingFace, which means you need to:
+
 1. Accept NVIDIA's license agreement
 2. Authenticate with a HuggingFace token
 
@@ -13,6 +14,7 @@ This guide walks you through the complete setup process.
 ## Why is a Token Required?
 
 PersonaPlex-7B-v1 is a **gated model** on HuggingFace for several reasons:
+
 - **License Agreement**: You must accept NVIDIA's terms of use
 - **Access Control**: Ensures users acknowledge the model's capabilities and limitations
 - **Usage Tracking**: Helps NVIDIA understand model adoption and usage
@@ -68,32 +70,44 @@ You have three options for configuring your HuggingFace token, listed from most 
 The most secure way for local development is to use .NET User Secrets:
 
 1. Navigate to the project directory:
+
    ```bash
    cd NvidiaVoiceAgent
    ```
 
 2. Initialize user secrets (if not already done):
+
    ```bash
    dotnet user-secrets init
    ```
 
 3. Set your HuggingFace token:
+
    ```bash
    dotnet user-secrets set "ModelHub:HuggingFaceToken" "hf_your_actual_token_here"
    ```
 
-4. Verify it was set correctly:
+4. (Optional) Set a model cache path (recommended for large models):
+
+   ```bash
+   dotnet user-secrets set "ModelHub:ModelCachePath" "E:\\models-cache"
+   ```
+
+5. Verify it was set correctly:
+
    ```bash
    dotnet user-secrets list
    ```
 
 **Benefits:**
+
 - Token is stored outside the project directory
 - Never accidentally committed to Git
 - Specific to your user account on your machine
 - Automatically loaded in Development environment
 
-**Location:**
+    "ModelCachePath": "E:\\models-cache",
+    "HuggingFaceToken": "hf_your_actual_token_here"
 - **Windows**: `%APPDATA%\Microsoft\UserSecrets\nvidia-voiceagent-cs-secrets\secrets.json`
 - **Linux/macOS**: `~/.microsoft/usersecrets/nvidia-voiceagent-cs-secrets/secrets.json`
 
@@ -102,18 +116,23 @@ The most secure way for local development is to use .NET User Secrets:
 For production deployments, use environment variables:
 
 **Linux/macOS:**
+
 ```bash
 export ModelHub__HuggingFaceToken="hf_your_token_here"
+export ModelHub__ModelCachePath="/opt/model-cache"
 dotnet run
 ```
 
 **Windows (PowerShell):**
+
 ```powershell
 $env:ModelHub__HuggingFaceToken="hf_your_token_here"
+$env:ModelHub__ModelCachePath="E:\\models-cache"
 dotnet run
 ```
 
 **Docker:**
+
 ```yaml
 environment:
   - ModelHub__HuggingFaceToken=hf_your_token_here
@@ -130,6 +149,8 @@ cp appsettings.Development.json.example appsettings.Development.json
 ```
 
 Then edit and replace `"hf_your_actual_token_here"` with your actual token:
+
+> ✅ **Note**: User Secrets and Environment Variables override appsettings values in Development.
 
 ```json
 {
@@ -148,6 +169,7 @@ Then edit and replace `"hf_your_actual_token_here"` with your actual token:
 ### ✅ Recommended: User Secrets (Development)
 
 For local development, **always use User Secrets** as described in Option 1 above. This ensures:
+
 - Tokens are never in your project directory
 - No risk of accidental commits
 - Easy to manage per-developer configuration
@@ -155,6 +177,7 @@ For local development, **always use User Secrets** as described in Option 1 abov
 ### ⚠️ Configuration Files are Now Gitignored
 
 As of the latest version, the following files are excluded from Git:
+
 - `appsettings.json`
 - `appsettings.*.json` (except the example file)
 
@@ -179,6 +202,7 @@ Store token as a secret named `ModelHub--HuggingFaceToken`.
 ### Via Web UI
 
 1. Start the application:
+
    ```bash
    cd NvidiaVoiceAgent
    dotnet run
@@ -233,6 +257,7 @@ else
 **Cause**: Invalid or missing token
 
 **Solution**:
+
 1. Verify token is correctly copied to `appsettings.json`
 2. Ensure token starts with `hf_`
 3. Check token hasn't been revoked in HuggingFace settings
@@ -243,6 +268,7 @@ else
 **Cause**: License not accepted
 
 **Solution**:
+
 1. Visit [https://huggingface.co/nvidia/personaplex-7b-v1](https://huggingface.co/nvidia/personaplex-7b-v1)
 2. Click "Agree and access repository"
 3. Try download again
@@ -252,6 +278,7 @@ else
 **Cause**: Network issues or server-side rate limiting
 
 **Solution**:
+
 1. Check internet connection
 2. Wait a few minutes and retry
 3. If persistent, try downloading during off-peak hours
@@ -261,6 +288,7 @@ else
 **Cause**: Files downloaded to wrong location
 
 **Solution**:
+
 1. Check `ModelHub:ModelCachePath` in `appsettings.json`
 2. Verify files exist in `model-cache/personaplex-7b/`
 3. Expected files:
@@ -268,6 +296,15 @@ else
    - `tokenizer-e351c8d8-checkpoint125.safetensors` (~385 MB)
    - `tokenizer_spm_32k_3.model` (~553 KB)
    - `voices.tgz` (~6.1 MB)
+
+### ❌ "There is not enough space on the disk"
+
+**Cause**: The download drive does not have enough free space.
+
+**Solution**:
+
+1. Free at least 20–25 GB on the target drive
+2. Or set `ModelHub:ModelCachePath` to a drive with more space
 
 ---
 
@@ -343,6 +380,7 @@ Look for:
 ### Available Voices
 
 PersonaPlex includes 18 distinct voice personas:
+
 - Professional/Business voices
 - Casual/Conversational styles
 - Various age ranges and accents
