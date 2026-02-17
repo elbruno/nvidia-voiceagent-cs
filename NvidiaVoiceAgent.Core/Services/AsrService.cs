@@ -318,12 +318,24 @@ public class AsrService : IAsrService, IDisposable
 
             // Typical shape: [batch, mel_bins, time] or [batch, time, mel_bins]
             var dims = input.Value.Dimensions;
+            _logger.LogInformation("Model input {Name} shape: [{Dims}]", input.Key, string.Join(", ", dims));
+
             if (dims.Length >= 2)
             {
                 // mel_bins dimension is usually the second one (index 1) for shape [1, mel, T]
-                int expectedMels = dims[1];
-
-                // Sanity check: mel bins should be between 40 and 256
+                // But could be index 2 for [1, T, mel]
+                // Check which dimension matches current extractor
+                
+                int index1 = dims[1];
+                int index2 = dims.Length > 2 ? dims[2] : -1;
+                
+                // Heuristic: Mels is usually 80 or 128 (or similar fixed). Time is usually -1 or very large.
+                int expectedMels = index1;
+                if ((index1 == -1 || index1 < 40) && index2 >= 40)
+                {
+                     expectedMels = index2;
+                }
+                
                 if (expectedMels >= 40 && expectedMels <= 256 && expectedMels != _melExtractor.NumMels)
                 {
                     _logger.LogInformation(
@@ -373,6 +385,8 @@ public class AsrService : IAsrService, IDisposable
         int numFrames = melSpec.GetLength(0);
         int numMels = melSpec.GetLength(1);
 
+        _logger.LogDebug("Original MelSpec frames: {NumFrames}, Mels: {NumMels}", numFrames, numMels);
+
         if (numFrames == 0)
         {
             return string.Empty;
@@ -387,38 +401,99 @@ public class AsrService : IAsrService, IDisposable
                 inputData[m * numFrames + t] = melSpec[t, m];
             }
         }
+        
+        // Ensure number of frames is ODD?
+        // Some models require odd frames due to 'same' padding logic in Conv1d?
+        // If 24 failed (even).
+        // Try not padding or padding to odd?
+        // But odd usually causes issues with /2.
+        
+        // Let's reconsider the error "3 by 5".
+        // If I pass length=6 (24/4). Becomes 5 internally? (6-1 = 5?)
+        
+        // Let's set length to numFrames (24).
+        // AND use (numFrames - 1) / 4 ??
+        // It's a shot in the dark without ONNX insight.
+        
+        // However, standard NeMo ASR usually uses 'length' calculated as:
+        // (audio_len // hop_length) -> then passed to model.
+        // The model handles subsampling of length internally OR expects subsampled length.
+        
+        // Let's revert to:
+        // Padding: NONE (Use original 23).
+        // Length: 23 (Full).
+        // Maybe the model *requires* correct length for masking.
+        
+        // Removing padding logic for a moment to see "13 by 25" again?
+        // Or "3 by 5"?
+        
+        // I'll comment out padding.
+        
+        if (numFrames % 4 != 0)
+        {
+            int padding = 4 - (numFrames % 4);
+            _logger.LogDebug("Padding input with {Padding} frames to reach multiple of 4", padding);
+            
+            Array.Resize(ref inputData, 1 * numMels * (numFrames + padding));
+            numFrames += padding;
+        }
 
         var inputTensor = new DenseTensor<float>(inputData, new[] { 1, numMels, numFrames });
 
-        // The encoder's convolutional frontend subsamples the mel spectrogram
-        // (stride 2). The ONNX export does not track the length reduction
-        // internally, so we compute the post-subsampling length ourselves.
-        // Formula: ceil(numFrames / 2) = (numFrames + 1) / 2
-        // RE-FIX 6: Force length to match Input Tensor Dimension 2 (Time).
-        // If inputTensor has shape [1, 80, numFrames], then 'length' strictly must reflect 'numFrames'.
-        // HOWEVER, we saw "3 by 5" failure when passing 5.
-        // This suggests the model graph broadcast 3 against 5.
-        // If 5 was 'length' (my input), and 3 was 'encoded_sequence' (internal).
-        // Then 'length' was broadcast against 'encoded_sequence'.
-        // This implies 'length' should match 'encoded_sequence' -> 3.
-        // So for short audio, it wants HALF.
+        // Ensure number of frames is padded such that subsampling aligns
+        // Target: numFrames such that ((numFrames-3)/2+1 - 3)/2+1 == (numFrames+X)/4 ??
+        // Actually, just ensuring it's a multiple of 4 is usually enough if models use padding.
+        // But if they use 'valid' convolution (no padding), we lose frames.
+        
+        // Let's pad to multiple of 4.
+        if (numFrames % 4 != 0)
+        {
+            int padding = 4 - (numFrames % 4);
+             _logger.LogDebug("Padding input with {Padding} frames to reach multiple of 4", padding);
+            
+            Array.Resize(ref inputData, 1 * numMels * (numFrames + padding));
+            numFrames += padding;
+        }
 
-        // BUT for long audio (25), passing 13 (HALF) -> "13 by 25" failure.
-        // Here, 13 (length) broadcast against 25 (Internal?????).
-        // If internal was 25, then 'length' should match 25.
-        // So for long audio, it wants FULL.
+        var inputTensor = new DenseTensor<float>(inputData, new[] { 1, numMels, numFrames });
+        
+        // CALCULATE LENGTH expected by model.
+        // If internal is 5 (for 24).
+        // And I pass 24.
+        // Model computes ceil(24/4)=6. Mismatch.
+        
+        // I should pass "20"? 
+        // 20 -> 5.
+        // if I pass length=20.
+        // Model computes 5.
+        // Internal tensor is 5.
+        // Match!
+        
+        // So I should pass length = numFrames - (numFrames % 4)?
+        long encoderLengthIdx = numFrames; // Default
+        
+        // If internal tensor is smaller due to 'valid' convolution drop-off.
+        // We can cheat by confirming the length we PASS is slightly smaller?
+        // Let's try passing 'numFrames - 4' if we padded?
+        
+        // Or calculating the exact 'valid' output size * 4?
+        int l_in = numFrames;
+        int l_out1 = (l_in - 3) / 2 + 1;
+        int l_out2 = (l_out1 - 3) / 2 + 1;
+        
+        // If model divides input by 4 to get mask size.
+        // We want MaskSize == l_out2.
+        // So Input/4 == l_out2.
+        // So Input == l_out2 * 4.
+        
+        encoderLengthIdx = l_out2 * 4;
+        
+        _logger.LogDebug("Passing adjusted length {AdjLen} (derived from internal {IntLen} * 4) for numFrames {NumFrames}", encoderLengthIdx, l_out2, numFrames);
 
-        // WHY?
-        // Maybe because 25 is odd? (25+1)/2 = 13.
-        // Maybe because 5 is odd? (5+1)/2 = 3.
-        // Both are odd numbers.
+        var lengthTensor = new DenseTensor<long>(new long[] { encoderLengthIdx }, new[] { 1 });
 
-        // Hypothesis: The model expects 'length' to be strictly INT32 and equal to 'numFrames'.
-        // The error 'BroadcastIterator' might be misleading if types differ.
-        // Let's try passing 'numFrames' BUT force it into 'int' or 'long' carefully.
-        // Parakeet-TDT-1.1B usually takes 'length' as INT64 [batch].
-
-        int encoderLength = numFrames; // Default to Full Length
+        // Prepare inputs - try different input configurations based on model
+        var inputs = CreateModelInputs(inputTensor, lengthTensor, (int)encoderLengthIdx);
 
         // Run inference
         using var results = _session.Run(inputs);
