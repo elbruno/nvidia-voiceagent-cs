@@ -917,11 +917,14 @@
                     : m.status === 'downloading' ? '📥 Downloading'
                     : '❌ Not Downloaded';
                 const sizeMb = m.expectedSizeMb.toFixed(1);
+                const tokenConfigured = m.huggingFaceTokenConfigured || false;
                 const showDownloadBtn = m.status !== 'downloaded' && m.isAvailableForDownload;
                 const showComingSoon = m.status !== 'downloaded' && !m.isAvailableForDownload;
                 const showDeleteBtn = m.status === 'downloaded';
                 const requiresAuth = m.requiresAuthentication || false;
-                const showAuthWarning = requiresAuth && m.status !== 'downloaded';
+                const showAuthWarning = requiresAuth && !tokenConfigured && m.status !== 'downloaded';
+                const downloadLocked = requiresAuth && !tokenConfigured;
+                const downloadLabel = downloadLocked ? '🔒 Token required' : '⬇ Download';
 
                 card.innerHTML = `
                     <div class="model-card-row">
@@ -930,11 +933,13 @@
                             <div class="model-card-meta">
                                 <a href="https://huggingface.co/${esc(m.repoId)}" target="_blank" rel="noopener">${esc(m.repoId)}</a>
                                 &nbsp;·&nbsp;${sizeMb} MB${m.isRequired ? ' · <strong>required</strong>' : ''}
-                                ${requiresAuth ? ' · <span style="color:var(--warning)">🔐 Requires HF Token</span>' : ''}
+                                ${requiresAuth ? (tokenConfigured
+                                    ? ' · <span style="color:var(--success)">🔐 HF Token configured</span>'
+                                    : ' · <span style="color:var(--warning)">🔐 Requires HF Token</span>') : ''}
                             </div>
                         </div>
                         <div class="model-card-status">
-                            ${showDownloadBtn ? `<button class="model-download-btn" id="model-dl-btn-${idx}" onclick="downloadModel('${esc(m.name)}', ${idx})">⬇ Download</button>` : ''}
+                            ${showDownloadBtn ? `<button class="model-download-btn" id="model-dl-btn-${idx}" data-locked="${downloadLocked}" ${downloadLocked ? 'disabled' : ''} onclick="downloadModel('${esc(m.name)}', ${idx})">${downloadLabel}</button>` : ''}
                             ${showComingSoon ? '<span class="model-coming-soon">🔜 Coming Soon</span>' : ''}
                             ${showDeleteBtn ? `<button class="model-delete-btn" id="model-del-btn-${idx}" onclick="deleteModel('${esc(m.name)}', ${idx})">🗑️ Delete</button>` : ''}
                             <span class="status-badge ${statusClass}" id="model-badge-${idx}">${statusLabel}</span>
@@ -1037,7 +1042,11 @@
             } else {
                 badge.className = 'status-badge not-downloaded';
                 badge.textContent = '❌ Not Downloaded';
-                if (dlBtn) { dlBtn.disabled = false; dlBtn.textContent = '⬇ Download'; }
+                if (dlBtn) {
+                    const locked = dlBtn.dataset.locked === 'true';
+                    dlBtn.disabled = locked;
+                    dlBtn.textContent = locked ? '🔒 Token required' : '⬇ Download';
+                }
                 if (progressEl) progressEl.classList.remove('visible');
             }
         }

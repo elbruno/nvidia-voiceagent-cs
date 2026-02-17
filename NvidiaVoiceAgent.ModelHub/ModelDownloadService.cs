@@ -145,6 +145,7 @@ public class ModelDownloadService : IModelDownloadService
                 progress: progress);
 
             // Download additional files
+            var failedAdditionalFiles = new List<string>();
             foreach (var additionalFile in model.AdditionalFiles)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -162,7 +163,22 @@ public class ModelDownloadService : IModelDownloadService
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to download additional file {File}. Continuing...", additionalFile);
+                    failedAdditionalFiles.Add(additionalFile);
                 }
+            }
+
+            if (failedAdditionalFiles.Count > 0)
+            {
+                var failureMessage = $"Missing required files for {model.Name}: {string.Join(", ", failedAdditionalFiles)}";
+                _logger.LogWarning(failureMessage);
+                _progressReporter.OnDownloadCompleted(model.Name, success: false);
+
+                return new DownloadResult
+                {
+                    Success = false,
+                    ModelType = modelType,
+                    ErrorMessage = failureMessage
+                };
             }
 
             _progressReporter.OnDownloadCompleted(model.Name, success: true);

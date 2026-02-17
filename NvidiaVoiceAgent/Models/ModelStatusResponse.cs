@@ -49,4 +49,9 @@ public class ModelStatusResponse
     /// Whether this model requires HuggingFace authentication (for gated models).
     /// </summary>
     public bool RequiresAuthentication { get; set; }
+
+    /// <summary>
+    /// Whether a HuggingFace token is configured on the server.
+    /// </summary>
+    public bool HuggingFaceTokenConfigured { get; set; }
 }

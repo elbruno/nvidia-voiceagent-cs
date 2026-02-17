@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using NvidiaVoiceAgent.ModelHub;
 using NvidiaVoiceAgent.Models;
 
@@ -14,15 +15,18 @@ public class ModelsController : ControllerBase
 {
     private readonly IModelRegistry _registry;
     private readonly IModelDownloadService _downloadService;
+    private readonly ModelHubOptions _options;
     private readonly ILogger<ModelsController> _logger;
 
     public ModelsController(
         IModelRegistry registry,
         IModelDownloadService downloadService,
+        IOptions<ModelHubOptions> options,
         ILogger<ModelsController> logger)
     {
         _registry = registry;
         _downloadService = downloadService;
+        _options = options.Value;
         _logger = logger;
     }
 
@@ -38,7 +42,9 @@ public class ModelsController : ControllerBase
         {
             var isAvailable = _downloadService.IsModelAvailable(model.Type);
             var localPath = _downloadService.GetModelPath(model.Type);
-            
+            var tokenConfigured = !string.IsNullOrWhiteSpace(_options.HuggingFaceToken);
+            var requiresAuth = model.Type == ModelType.PersonaPlex;
+
             return new ModelStatusResponse
             {
                 Name = model.Name,
@@ -49,7 +55,8 @@ public class ModelsController : ControllerBase
                 ExpectedSizeMb = model.ExpectedSizeBytes / (1024.0 * 1024.0),
                 IsRequired = model.IsRequired,
                 IsAvailableForDownload = model.IsAvailableForDownload,
-                RequiresAuthentication = model.Type == ModelType.PersonaPlex
+                RequiresAuthentication = requiresAuth,
+                HuggingFaceTokenConfigured = tokenConfigured
             };
         }).ToList();
 
@@ -68,7 +75,7 @@ public class ModelsController : ControllerBase
     public async Task<IActionResult> DownloadModel(string name)
     {
         var allModels = _registry.GetAllModels();
-        var modelToDownload = allModels.FirstOrDefault(m => 
+        var modelToDownload = allModels.FirstOrDefault(m =>
             m.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
         if (modelToDownload == null)
@@ -78,23 +85,33 @@ public class ModelsController : ControllerBase
 
         if (!modelToDownload.IsAvailableForDownload)
         {
-            return BadRequest(new 
-            { 
+            return BadRequest(new
+            {
                 error = $"Model '{name}' is not yet available for download.",
                 message = "This model is marked as coming soon."
             });
         }
 
+        var requiresAuth = modelToDownload.Type == ModelType.PersonaPlex;
+        if (requiresAuth && string.IsNullOrWhiteSpace(_options.HuggingFaceToken))
+        {
+            return BadRequest(new
+            {
+                error = $"Model '{name}' requires a HuggingFace token.",
+                message = "Set ModelHub:HuggingFaceToken before downloading gated models."
+            });
+        }
+
         _logger.LogInformation("Starting download for model: {ModelName}", name);
-        
+
         var downloadResult = await _downloadService.DownloadModelAsync(modelToDownload.Type);
-        
+
         if (downloadResult.Success)
         {
-            return Ok(new 
-            { 
-                message = $"Model '{name}' downloaded successfully.", 
-                path = downloadResult.ModelPath 
+            return Ok(new
+            {
+                message = $"Model '{name}' downloaded successfully.",
+                path = downloadResult.ModelPath
             });
         }
 
@@ -111,7 +128,7 @@ public class ModelsController : ControllerBase
     public IActionResult DeleteModel(string name)
     {
         var allModels = _registry.GetAllModels();
-        var modelToDelete = allModels.FirstOrDefault(m => 
+        var modelToDelete = allModels.FirstOrDefault(m =>
             m.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
         if (modelToDelete == null)
@@ -120,7 +137,7 @@ public class ModelsController : ControllerBase
         }
 
         var wasDeleted = _downloadService.DeleteModel(modelToDelete.Type);
-        
+
         if (wasDeleted)
         {
             _logger.LogInformation("Model deleted: {ModelName}", name);
